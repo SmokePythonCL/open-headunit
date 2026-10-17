@@ -1834,7 +1834,7 @@ class VideoDecoder(
             running = true
             clearFrameQueue()
             val newOutputThread = Thread {
-                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY)
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)
                 LegacyOptimizer.setHighPriority()
                 outputThreadLoop()
             }.apply { name = "VideoDecoder-Output" }
@@ -2619,7 +2619,8 @@ class VideoDecoder(
         }
 
         val infos = codecInfos.filter { !it.isEncoder && it.supportedTypes.any { t -> t.equals(mimeType, true) } }
-        val hw = infos.find { isHardwareAccelerated(it) }
+        val allwinnerHw = infos.find { isHardwareAccelerated(it) && it.name.lowercase(Locale.ROOT).contains("allwinner") }
+        val hw = allwinnerHw ?: infos.find { isHardwareAccelerated(it) }
         val sw = infos.find { !isHardwareAccelerated(it) }
         val selected = if (preferHardware && hw != null) hw.name else sw?.name ?: hw?.name
         AppLog.i("findBestCodec: hw=${hw?.name}, sw=${sw?.name}, preferHardware=$preferHardware, selected=$selected")

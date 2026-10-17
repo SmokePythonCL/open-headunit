@@ -2591,5 +2591,43 @@ class Settings(private val context: Context) {
         get() = prefs.getBoolean("show-vehicle-osd", true)
         set(value) = prefs.edit().putBoolean("show-vehicle-osd", value).apply()
 
+    // Speed-sensitive volume adjustment (GALA): 0 = Off, 1 = Low, 2 = Medium, 3 = High
+    var galaSpeedVolume: Int
+        get() = prefs.getInt("gala-speed-volume", 0)
+        set(value) = prefs.edit().putInt("gala-speed-volume", value).apply()
+
+    // DFM T5L Car Settings
+    var dfmSpeedLock: Boolean
+        get() = prefs.getBoolean("dfm-speed-lock", true)
+        set(value) = prefs.edit().putBoolean("dfm-speed-lock", value).apply()
+
+    var dfmAutoRelock: Boolean
+        get() = prefs.getBoolean("dfm-auto-relock", true)
+        set(value) = prefs.edit().putBoolean("dfm-auto-relock", value).apply()
+
+    var dfmDrivingLatch: Boolean
+        get() = prefs.getBoolean("dfm-driving-latch", true)
+        set(value) = prefs.edit().putBoolean("dfm-driving-latch", value).apply()
+
+    var dfmRemoteLockFeedback: Int
+        get() = prefs.getInt("dfm-remote-lock-feedback", 0)
+        set(value) = prefs.edit().putInt("dfm-remote-lock-feedback", value).apply()
+
+    var dfmRemoteWindowClose: Boolean
+        get() = prefs.getBoolean("dfm-remote-window-close", true)
+        set(value) = prefs.edit().putBoolean("dfm-remote-window-close", value).apply()
+
+    var dfmFollowMeHome: Int
+        get() = prefs.getInt("dfm-follow-me-home", 0)
+        set(value) = prefs.edit().putInt("dfm-follow-me-home", value).apply()
+
+    var dfmCeilingLightDelay: Int
+        get() = prefs.getInt("dfm-ceiling-light-delay", 1)
+        set(value) = prefs.edit().putInt("dfm-ceiling-light-delay", value).apply()
+
+    var dfmPowerSavingTime: Int
+        get() = prefs.getInt("dfm-power-saving-time", 0)
+        set(value) = prefs.edit().putInt("dfm-power-saving-time", value).apply()
+
 }
 

@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Message
 import android.os.SystemClock
+import android.view.KeyEvent
 import com.andrerinas.openheadunit.connection.carkey.CarKeyReceiver
 import com.andrerinas.openheadunit.input.TopwayKey
 import com.andrerinas.openheadunit.utils.AppLog
@@ -25,12 +26,27 @@ class CarTopwayReceiver : CarKeyReceiver {
     companion object {
         private const val TWUTIL_CLASS = "android.tw.john.TWUtil"
         private const val HANDLER_TAG = "OpenHeadunitKeyRx"
+        const val LONG_PRESS_THRESHOLD_MS = 600L
+        const val SHORT_PRESS_TIMEOUT_MS = 380L
+
+        val DUAL_ACTION_KEYS = setOf(
+            0x07, // Mute
+            0x12, // Mode
+            0x05, // Next
+            0x06, // Prev
+        )
     }
 
     private var twUtil: Any? = null
     private var handler: Handler? = null
     private var lastTopwayCode: Int = TopwayKey.NO_KEY
     private var lastKeyAtMs: Long = 0L
+
+    private var currentHoldingKey: Int? = null
+    private var firstKeyPressMs: Long = 0L
+    private var longPressTriggered: Boolean = false
+    private var pendingShortRunnable: Runnable? = null
+    private var pendingLongRunnable: Runnable? = null
 
     override val isSupported: Boolean by lazy {
         runCatching {
@@ -65,6 +81,55 @@ class CarTopwayReceiver : CarKeyReceiver {
                     if (topwayCode == TopwayKey.NO_KEY) return
 
                     val now = SystemClock.elapsedRealtime()
+
+                    if (topwayCode in DUAL_ACTION_KEYS) {
+                        if (topwayCode != currentHoldingKey) {
+                            pendingShortRunnable?.run()
+                            pendingShortRunnable = null
+                            pendingLongRunnable?.let { removeCallbacks(it) }
+                            pendingLongRunnable = null
+
+                            currentHoldingKey = topwayCode
+                            firstKeyPressMs = now
+                            longPressTriggered = false
+
+                            val keyCode = TopwayKey.toKeyCode(topwayCode)
+                            val shortRunnable = Runnable {
+                                if (!longPressTriggered && currentHoldingKey == topwayCode) {
+                                    currentHoldingKey = null
+                                    dispatchShortPress(appContext, topwayCode, keyCode, msg.what, msg.arg1)
+                                }
+                            }
+                            pendingShortRunnable = shortRunnable
+                            postDelayed(shortRunnable, SHORT_PRESS_TIMEOUT_MS)
+
+                            val longRunnable = Runnable {
+                                if (currentHoldingKey == topwayCode && !longPressTriggered) {
+                                    longPressTriggered = true
+                                    removeCallbacks(shortRunnable)
+                                    currentHoldingKey = null
+                                    dispatchLongPress(appContext, topwayCode)
+                                }
+                            }
+                            pendingLongRunnable = longRunnable
+                            postDelayed(longRunnable, LONG_PRESS_THRESHOLD_MS)
+                        } else {
+                            if (now - firstKeyPressMs >= LONG_PRESS_THRESHOLD_MS && !longPressTriggered) {
+                                longPressTriggered = true
+                                pendingShortRunnable?.let { removeCallbacks(it) }
+                                pendingShortRunnable = null
+                                currentHoldingKey = null
+                                dispatchLongPress(appContext, topwayCode)
+                            } else if (!longPressTriggered) {
+                                pendingShortRunnable?.let {
+                                    removeCallbacks(it)
+                                    postDelayed(it, SHORT_PRESS_TIMEOUT_MS)
+                                }
+                            }
+                        }
+                        return
+                    }
+
                     val debounceMs = TopwayKey.debounceWindowMs(topwayCode)
                     if (topwayCode == lastTopwayCode && now - lastKeyAtMs < debounceMs) {
                         AppLog.d(
@@ -91,17 +156,7 @@ class CarTopwayReceiver : CarKeyReceiver {
                         ),
                     )
 
-                    appContext.sendBroadcast(
-                        Intent("com.andrerinas.openheadunit.DEBUG_KEY").apply {
-                            setPackage(appContext.packageName)
-                            putExtra("action", "Topway.TWUtil")
-                            putExtra("keyCode", keyCode)
-                            putExtra("topway_code", "0x%02X (%s)".format(topwayCode, name))
-                            putExtra("what", "0x%04X".format(msg.what))
-                            putExtra("arg1", msg.arg1)
-                        },
-                    )
-
+                    broadcastDebugKey(appContext, keyCode, topwayCode, name, msg.what, msg.arg1, "direct")
                     handleClick(appContext, keyCode)
                 }
             }
@@ -118,11 +173,58 @@ class CarTopwayReceiver : CarKeyReceiver {
         }
     }
 
+    private fun dispatchShortPress(context: Context, topwayCode: Int, keyCode: Int, what: Int, arg1: Int) {
+        val name = TopwayKey.nameOf(topwayCode) ?: "unnamed"
+        AppLog.i("CarKeyReceiver: Topway short press %s 0x%02X -> keycode %d".format(name, topwayCode, keyCode))
+        broadcastDebugKey(context, keyCode, topwayCode, name, what, arg1, "short")
+        handleClick(context, keyCode)
+    }
+
+    private fun dispatchLongPress(context: Context, topwayCode: Int) {
+        val name = TopwayKey.nameOf(topwayCode) ?: "unnamed"
+        AppLog.i("CarKeyReceiver: Topway LONG press %s 0x%02X triggered".format(name, topwayCode))
+        broadcastDebugKey(context, TopwayKey.toKeyCode(topwayCode), topwayCode, name, 0, 0, "long")
+        when (topwayCode) {
+            0x07 -> toggleVoiceAssistant(context)
+            0x12 -> handleClick(context, KeyEvent.KEYCODE_HOME)
+            0x05 -> handleClick(context, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
+            0x06 -> handleClick(context, KeyEvent.KEYCODE_MEDIA_REWIND)
+            else -> handleClick(context, TopwayKey.toKeyCode(topwayCode))
+        }
+    }
+
+    private fun broadcastDebugKey(
+        context: Context,
+        keyCode: Int,
+        topwayCode: Int,
+        name: String,
+        what: Int,
+        arg1: Int,
+        pressType: String,
+    ) {
+        context.sendBroadcast(
+            Intent("com.andrerinas.openheadunit.DEBUG_KEY").apply {
+                setPackage(context.packageName)
+                putExtra("action", "Topway.TWUtil")
+                putExtra("keyCode", keyCode)
+                putExtra("topway_code", "0x%02X (%s)".format(topwayCode, name))
+                putExtra("what", "0x%04X".format(what))
+                putExtra("arg1", arg1)
+                putExtra("press_type", pressType)
+            },
+        )
+    }
+
     override fun unregister() {
         val instance = twUtil ?: return
         twUtil = null
-        handler?.removeCallbacksAndMessages(null)
+        handler?.let { h ->
+            pendingShortRunnable?.let { h.removeCallbacks(it) }
+            pendingLongRunnable?.let { h.removeCallbacks(it) }
+            h.removeCallbacksAndMessages(null)
+        }
         handler = null
+        currentHoldingKey = null
 
         try {
             val clazz = instance.javaClass

@@ -20,6 +20,7 @@ import android.net.Network
 import android.net.NetworkInfo
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
@@ -611,6 +612,22 @@ class AapService : Service() {
 
     private var lastSentTelemetry: TopwayCarState.VehicleTelemetryState? = null
     private var topwayWakeFollowUpJob: Job? = null
+    private var lastGalaOffset: Int = 0
+    private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+
+    private fun handleGalaVolume(speedKmh: Float, sensitivity: Int) {
+        val newOffset = TopwayCarState.computeGalaOffset(speedKmh, sensitivity, lastGalaOffset)
+        val delta = newOffset - lastGalaOffset
+        if (delta != 0) {
+            lastGalaOffset = newOffset
+            AppLog.i("AapService: GALA speed volume adjustment: delta=$delta, newOffset=$newOffset at ${speedKmh} km/h")
+            val steps = kotlin.math.abs(delta)
+            val direction = if (delta > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+            for (i in 0 until steps) {
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
+            }
+        }
+    }
 
     private val topwayCarStateListener = object : TopwayCarState.Listener {
         override fun onTelemetryChanged(telemetry: TopwayCarState.VehicleTelemetryState) {
@@ -631,8 +648,14 @@ class AapService : Service() {
         force: Boolean
     ) {
         if (!TopwayCarState.isSupported) return
-        if (!commManager.isConnected) return
         val appSettings = App.provide(this).settings
+
+        val speedKmh = telemetry.speedKmh
+        if (speedKmh != null && appSettings.galaSpeedVolume > 0) {
+            handleGalaVolume(speedKmh, appSettings.galaSpeedVolume)
+        }
+
+        if (!commManager.isConnected) return
         if (!appSettings.sendVehicleTelemetry) return
 
         val prev = if (force) null else lastSentTelemetry
@@ -1514,6 +1537,10 @@ class AapService : Service() {
         AppLog.i("AapService: Starting GpsLocationService and NightModeManager since connection is established")
         startService(GpsLocationService.intent(this))
         nightModeManager?.start()
+
+        if (TopwayCarState.isSupported) {
+            TopwayCarState.syncPhoneTimeToVehicle(this)
+        }
 
         serviceScope.launch { commManager.startHandshake() }
     }
@@ -3918,6 +3945,20 @@ class AapService : Service() {
                     putExtra(EXTRA_SETTINGS_REARM, true)
                 })
             }
+        }
+
+        /** Force an immediate rearm and reconnection attempt of the wireless transport. */
+        fun triggerWirelessRearm(context: Context) {
+            AppLog.i("AapService: triggerWirelessRearm requested by UI")
+            val startIntent = Intent(context, AapService::class.java).apply {
+                action = ACTION_START_WIRELESS
+            }
+            ContextCompat.startForegroundService(context, startIntent)
+
+            val pokeIntent = Intent(context, AapService::class.java).apply {
+                action = ACTION_NATIVE_AA_POKE
+            }
+            ContextCompat.startForegroundService(context, pokeIntent)
         }
 
         /**

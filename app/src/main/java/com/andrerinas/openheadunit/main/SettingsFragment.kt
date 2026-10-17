@@ -65,6 +65,7 @@ import com.andrerinas.openheadunit.utils.AppLog
 import com.andrerinas.openheadunit.utils.AppPermissions
 import com.andrerinas.openheadunit.utils.AppThemeManager
 import com.andrerinas.openheadunit.utils.Settings
+import com.andrerinas.openheadunit.utils.TopwayCarState
 import com.andrerinas.openheadunit.view.PerformanceOverlayField
 import com.andrerinas.openheadunit.view.PerformanceOverlayPolicy
 import com.andrerinas.openheadunit.utils.LocaleHelper
@@ -197,6 +198,15 @@ class SettingsFragment : Fragment() {
     private var pendingFakeSpeed: Boolean? = null
     private var pendingSendVehicleTelemetry: Boolean? = null
     private var pendingShowVehicleOsd: Boolean? = null
+    private var pendingGalaSpeedVolume: Int? = null
+    private var pendingDfmSpeedLock: Boolean? = null
+    private var pendingDfmAutoRelock: Boolean? = null
+    private var pendingDfmDrivingLatch: Boolean? = null
+    private var pendingDfmRemoteLockFeedback: Int? = null
+    private var pendingDfmRemoteWindowClose: Boolean? = null
+    private var pendingDfmFollowMeHome: Int? = null
+    private var pendingDfmCeilingLightDelay: Int? = null
+    private var pendingDfmPowerSavingTime: Int? = null
     private var pendingNarrowBandProfileCap: Boolean? = null
     private var pendingDebugVideoLowLatency: Boolean? = null
     private var pendingAllowExternalConfiguration: Boolean? = null
@@ -398,6 +408,15 @@ class SettingsFragment : Fragment() {
         pendingFakeSpeed = settings.fakeSpeed
         pendingSendVehicleTelemetry = settings.sendVehicleTelemetry
         pendingShowVehicleOsd = settings.showVehicleOsd
+        pendingGalaSpeedVolume = settings.galaSpeedVolume
+        pendingDfmSpeedLock = settings.dfmSpeedLock
+        pendingDfmAutoRelock = settings.dfmAutoRelock
+        pendingDfmDrivingLatch = settings.dfmDrivingLatch
+        pendingDfmRemoteLockFeedback = settings.dfmRemoteLockFeedback
+        pendingDfmRemoteWindowClose = settings.dfmRemoteWindowClose
+        pendingDfmFollowMeHome = settings.dfmFollowMeHome
+        pendingDfmCeilingLightDelay = settings.dfmCeilingLightDelay
+        pendingDfmPowerSavingTime = settings.dfmPowerSavingTime
         pendingUseLibusb = settings.useLibusb
         pendingNarrowBandProfileCap = settings.narrowBandProfileCap
         pendingDebugVideoLowLatency = settings.debugVideoLowLatency
@@ -538,6 +557,15 @@ class SettingsFragment : Fragment() {
         pendingFakeSpeed = settings.fakeSpeed
         pendingSendVehicleTelemetry = settings.sendVehicleTelemetry
         pendingShowVehicleOsd = settings.showVehicleOsd
+        pendingGalaSpeedVolume = settings.galaSpeedVolume
+        pendingDfmSpeedLock = settings.dfmSpeedLock
+        pendingDfmAutoRelock = settings.dfmAutoRelock
+        pendingDfmDrivingLatch = settings.dfmDrivingLatch
+        pendingDfmRemoteLockFeedback = settings.dfmRemoteLockFeedback
+        pendingDfmRemoteWindowClose = settings.dfmRemoteWindowClose
+        pendingDfmFollowMeHome = settings.dfmFollowMeHome
+        pendingDfmCeilingLightDelay = settings.dfmCeilingLightDelay
+        pendingDfmPowerSavingTime = settings.dfmPowerSavingTime
         pendingUseLibusb = settings.useLibusb
         pendingNarrowBandProfileCap = settings.narrowBandProfileCap
         pendingDebugVideoLowLatency = settings.debugVideoLowLatency
@@ -792,6 +820,56 @@ class SettingsFragment : Fragment() {
         pendingFakeSpeed?.let { if (it != settings.fakeSpeed) settings.fakeSpeed = it }
         pendingSendVehicleTelemetry?.let { if (it != settings.sendVehicleTelemetry) settings.sendVehicleTelemetry = it }
         pendingShowVehicleOsd?.let { if (it != settings.showVehicleOsd) settings.showVehicleOsd = it }
+        pendingGalaSpeedVolume?.let { if (it != settings.galaSpeedVolume) settings.galaSpeedVolume = it }
+
+        pendingDfmSpeedLock?.let {
+            if (it != settings.dfmSpeedLock) {
+                settings.dfmSpeedLock = it
+                TopwayCarState.writeDfmSetting(0x80, 2, if (it) 1 else 0)
+            }
+        }
+        pendingDfmAutoRelock?.let {
+            if (it != settings.dfmAutoRelock) {
+                settings.dfmAutoRelock = it
+                TopwayCarState.writeDfmSetting(0x80, 3, if (it) 1 else 0)
+            }
+        }
+        pendingDfmDrivingLatch?.let {
+            if (it != settings.dfmDrivingLatch) {
+                settings.dfmDrivingLatch = it
+                TopwayCarState.writeDfmSetting(0x89, 2, if (it) 1 else 0)
+            }
+        }
+        pendingDfmRemoteLockFeedback?.let {
+            if (it != settings.dfmRemoteLockFeedback) {
+                settings.dfmRemoteLockFeedback = it
+                TopwayCarState.writeDfmSetting(0x80, 4, it)
+            }
+        }
+        pendingDfmRemoteWindowClose?.let {
+            if (it != settings.dfmRemoteWindowClose) {
+                settings.dfmRemoteWindowClose = it
+                TopwayCarState.writeDfmSetting(0x80, 5, if (it) 1 else 0)
+            }
+        }
+        pendingDfmFollowMeHome?.let {
+            if (it != settings.dfmFollowMeHome) {
+                settings.dfmFollowMeHome = it
+                TopwayCarState.writeDfmSetting(0x89, 1, it)
+            }
+        }
+        pendingDfmCeilingLightDelay?.let {
+            if (it != settings.dfmCeilingLightDelay) {
+                settings.dfmCeilingLightDelay = it
+                TopwayCarState.writeDfmSetting(0x80, 0, it)
+            }
+        }
+        pendingDfmPowerSavingTime?.let {
+            if (it != settings.dfmPowerSavingTime) {
+                settings.dfmPowerSavingTime = it
+                TopwayCarState.writeDfmSetting(0x80, 1, it)
+            }
+        }
         pendingUseLibusb?.let { if (it != settings.useLibusb) settings.useLibusb = it }
         pendingNarrowBandProfileCap?.let { if (it != settings.narrowBandProfileCap) settings.narrowBandProfileCap = it }
         pendingDebugVideoLowLatency?.let { if (it != settings.debugVideoLowLatency) settings.debugVideoLowLatency = it }
@@ -947,6 +1025,15 @@ class SettingsFragment : Fragment() {
                         pendingFakeSpeed != settings.fakeSpeed ||
                         pendingSendVehicleTelemetry != settings.sendVehicleTelemetry ||
                         pendingShowVehicleOsd != settings.showVehicleOsd ||
+                        pendingGalaSpeedVolume != settings.galaSpeedVolume ||
+                        pendingDfmSpeedLock != settings.dfmSpeedLock ||
+                        pendingDfmAutoRelock != settings.dfmAutoRelock ||
+                        pendingDfmDrivingLatch != settings.dfmDrivingLatch ||
+                        pendingDfmRemoteLockFeedback != settings.dfmRemoteLockFeedback ||
+                        pendingDfmRemoteWindowClose != settings.dfmRemoteWindowClose ||
+                        pendingDfmFollowMeHome != settings.dfmFollowMeHome ||
+                        pendingDfmCeilingLightDelay != settings.dfmCeilingLightDelay ||
+                        pendingDfmPowerSavingTime != settings.dfmPowerSavingTime ||
                         pendingWifiConnectionMode != settings.wifiConnectionMode ||
                         pendingHelperConnectionStrategy != settings.helperConnectionStrategy ||
                         pendingWaitForWifi != settings.waitForWifiBeforeWifiDirect ||
@@ -2048,6 +2135,181 @@ class SettingsFragment : Fragment() {
             }
         ))
 
+        if (TopwayCarState.isSupported) {
+            items.add(SettingItem.CategoryHeader("dfmSettings", R.string.dfm_settings_title))
+
+            items.add(SettingItem.ToggleSettingEntry(
+                stableId = "dfmSpeedLock",
+                nameResId = R.string.dfm_speed_lock,
+                descriptionResId = R.string.dfm_speed_lock_desc,
+                isChecked = pendingDfmSpeedLock ?: settings.dfmSpeedLock,
+                searchKeywords = "bloqueo puertas velocidad auto lock dfm dongfeng",
+                onCheckedChanged = { isChecked ->
+                    pendingDfmSpeedLock = isChecked
+                    checkChanges()
+                    updateSettingsList()
+                }
+            ))
+
+            items.add(SettingItem.ToggleSettingEntry(
+                stableId = "dfmAutoRelock",
+                nameResId = R.string.dfm_auto_relock,
+                descriptionResId = R.string.dfm_auto_relock_desc,
+                isChecked = pendingDfmAutoRelock ?: settings.dfmAutoRelock,
+                searchKeywords = "rebloqueo auto relock puertas seguridad dfm",
+                onCheckedChanged = { isChecked ->
+                    pendingDfmAutoRelock = isChecked
+                    checkChanges()
+                    updateSettingsList()
+                }
+            ))
+
+            items.add(SettingItem.ToggleSettingEntry(
+                stableId = "dfmDrivingLatch",
+                nameResId = R.string.dfm_driving_latch,
+                descriptionResId = R.string.dfm_driving_latch_desc,
+                isChecked = pendingDfmDrivingLatch ?: settings.dfmDrivingLatch,
+                searchKeywords = "pestillo seguro marcha latch dfm",
+                onCheckedChanged = { isChecked ->
+                    pendingDfmDrivingLatch = isChecked
+                    checkChanges()
+                    updateSettingsList()
+                }
+            ))
+
+            val feedbackOptions = arrayOf(
+                getString(R.string.dfm_remote_feedback_lights),
+                getString(R.string.dfm_remote_feedback_both)
+            )
+            val currentFeedbackIdx = (pendingDfmRemoteLockFeedback ?: settings.dfmRemoteLockFeedback).coerceIn(0, 1)
+            items.add(SettingItem.SettingEntry(
+                stableId = "dfmRemoteLockFeedback",
+                nameResId = R.string.dfm_remote_feedback,
+                value = feedbackOptions.getOrElse(currentFeedbackIdx) { feedbackOptions[0] },
+                searchKeywords = "mando control remoto llave claxon luces feedback dfm",
+                onClick = {
+                    MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                        .setTitle(R.string.dfm_remote_feedback)
+                        .setSingleChoiceItems(feedbackOptions, currentFeedbackIdx) { dialog, which ->
+                            pendingDfmRemoteLockFeedback = which
+                            checkChanges()
+                            dialog.dismiss()
+                            updateSettingsList()
+                        }
+                        .show()
+                }
+            ))
+
+            items.add(SettingItem.ToggleSettingEntry(
+                stableId = "dfmRemoteWindowClose",
+                nameResId = R.string.dfm_remote_windows,
+                descriptionResId = R.string.dfm_remote_windows_desc,
+                isChecked = pendingDfmRemoteWindowClose ?: settings.dfmRemoteWindowClose,
+                searchKeywords = "ventanas vidrios cierre mando remoto cerrar dfm windows",
+                onCheckedChanged = { isChecked ->
+                    pendingDfmRemoteWindowClose = isChecked
+                    checkChanges()
+                    updateSettingsList()
+                }
+            ))
+
+            val followMeOptions = arrayOf(
+                getString(R.string.dfm_follow_me_home_off),
+                getString(R.string.dfm_follow_me_home_30s),
+                getString(R.string.dfm_follow_me_home_60s),
+                getString(R.string.dfm_follow_me_home_90s)
+            )
+            val currentFollowMeIdx = (pendingDfmFollowMeHome ?: settings.dfmFollowMeHome).coerceIn(0, 3)
+            items.add(SettingItem.SettingEntry(
+                stableId = "dfmFollowMeHome",
+                nameResId = R.string.dfm_follow_me_home,
+                value = followMeOptions.getOrElse(currentFollowMeIdx) { followMeOptions[0] },
+                searchKeywords = "follow me home luces acompanamiento faros camino apagado dfm",
+                onClick = {
+                    MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                        .setTitle(R.string.dfm_follow_me_home)
+                        .setSingleChoiceItems(followMeOptions, currentFollowMeIdx) { dialog, which ->
+                            pendingDfmFollowMeHome = which
+                            checkChanges()
+                            dialog.dismiss()
+                            updateSettingsList()
+                        }
+                        .show()
+                }
+            ))
+
+            val ceilingOptions = arrayOf(
+                getString(R.string.dfm_ceiling_delay_0),
+                getString(R.string.dfm_ceiling_delay_15),
+                getString(R.string.dfm_ceiling_delay_30)
+            )
+            val currentCeilingIdx = (pendingDfmCeilingLightDelay ?: settings.dfmCeilingLightDelay).coerceIn(0, 2)
+            items.add(SettingItem.SettingEntry(
+                stableId = "dfmCeilingLightDelay",
+                nameResId = R.string.dfm_ceiling_light_delay,
+                value = ceilingOptions.getOrElse(currentCeilingIdx) { ceilingOptions[0] },
+                searchKeywords = "luz interior techo retardo ceiling dome light dfm",
+                onClick = {
+                    MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                        .setTitle(R.string.dfm_ceiling_light_delay)
+                        .setSingleChoiceItems(ceilingOptions, currentCeilingIdx) { dialog, which ->
+                            pendingDfmCeilingLightDelay = which
+                            checkChanges()
+                            dialog.dismiss()
+                            updateSettingsList()
+                        }
+                        .show()
+                }
+            ))
+
+            val powerSavingOptions = arrayOf(
+                getString(R.string.dfm_power_save_10),
+                getString(R.string.dfm_power_save_20),
+                getString(R.string.dfm_power_save_30)
+            )
+            val currentPowerSavingIdx = (pendingDfmPowerSavingTime ?: settings.dfmPowerSavingTime).coerceIn(0, 2)
+            items.add(SettingItem.SettingEntry(
+                stableId = "dfmPowerSavingTime",
+                nameResId = R.string.dfm_power_saving_time,
+                value = powerSavingOptions.getOrElse(currentPowerSavingIdx) { powerSavingOptions[0] },
+                searchKeywords = "ahorro bateria tiempo energia power saving dfm",
+                onClick = {
+                    MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                        .setTitle(R.string.dfm_power_saving_time)
+                        .setSingleChoiceItems(powerSavingOptions, currentPowerSavingIdx) { dialog, which ->
+                            pendingDfmPowerSavingTime = which
+                            checkChanges()
+                            dialog.dismiss()
+                            updateSettingsList()
+                        }
+                        .show()
+                }
+            ))
+
+            items.add(SettingItem.SettingEntry(
+                stableId = "quickAcModes",
+                nameResId = R.string.quick_ac_title,
+                value = getString(R.string.dfm_settings_desc),
+                searchKeywords = "climatizacion aire acondicionado quick cool heat defrost enfriamiento calefaccion desempanado",
+                onClick = {
+                    val acModes = arrayOf(
+                        getString(R.string.quick_ac_cooling),
+                        getString(R.string.quick_ac_heating),
+                        getString(R.string.quick_ac_defrost)
+                    )
+                    MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                        .setTitle(R.string.quick_ac_title)
+                        .setItems(acModes) { _, which ->
+                            val cmdMode = which + 1
+                            TopwayCarState.writeDfmSetting(0x8A, 1, cmdMode)
+                            ToastUtils.showToast(requireContext(), getString(R.string.quick_ac_sent), Toast.LENGTH_SHORT)
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                }
+            ))
+        }
+
         // --- Navigation Settings ---
                 items.add(SettingItem.SettingEntry(
             stableId = "oemAppManagement",
@@ -2709,6 +2971,31 @@ class SettingsFragment : Fragment() {
             value = "${(100 + (pendingMediaVolumeOffset ?: 0))}% / ${(100 + (pendingGuidanceVolumeOffset ?: 0))}% / ${(100 + (pendingSystemVolumeOffset ?: 0))}%",
             onClick = {
                 showAudioOffsetsDialog()
+            }
+        ))
+
+        val galaOptions = arrayOf(
+            getString(R.string.gala_off),
+            getString(R.string.gala_low),
+            getString(R.string.gala_medium),
+            getString(R.string.gala_high)
+        )
+        val currentGalaIdx = (pendingGalaSpeedVolume ?: settings.galaSpeedVolume).coerceIn(0, 3)
+        items.add(SettingItem.SettingEntry(
+            stableId = "galaSpeedVolume",
+            nameResId = R.string.gala_speed_volume,
+            value = galaOptions.getOrElse(currentGalaIdx) { galaOptions[0] },
+            searchKeywords = "gala volumen velocidad carretera highway noise audio adaptativo autopista speed volume",
+            onClick = {
+                MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                    .setTitle(R.string.gala_speed_volume)
+                    .setSingleChoiceItems(galaOptions, currentGalaIdx) { dialog, which ->
+                        pendingGalaSpeedVolume = which
+                        checkChanges()
+                        dialog.dismiss()
+                        updateSettingsList()
+                    }
+                    .show()
             }
         ))
 

@@ -320,4 +320,133 @@ class TopwayCarStateTest {
         assertFalse(TopwayCarState.resolveEffectiveCarSignalNight(isAstronomicalNight = false)!!)
         assertTrue(TopwayCarState.resolveEffectiveCarSignalNight(isAstronomicalNight = true)!!)
     }
+
+    @Test
+    fun `parseDfmTelemetry decodes battery voltage in sub 0x09`() {
+        var state = TopwayCarState.VehicleTelemetryState()
+        // 12.6V = 12600 mV = 0x3138 (b1=0x38, b2=0x31)
+        state = TopwayCarState.parseDfmTelemetry(
+            arg1 = TopwayCarState.CAN_CMD_DFM_VEHICLE_INFO,
+            payload = byteArrayOf(0x09, 0x38, 0x31),
+            previous = state,
+        )!!
+        assertEquals(12.6f, state.batteryVoltage!!, 0.01f)
+
+        // Invalid voltage out of 5000..20000 range is ignored
+        val stateInvalid = TopwayCarState.parseDfmTelemetry(
+            arg1 = TopwayCarState.CAN_CMD_DFM_VEHICLE_INFO,
+            payload = byteArrayOf(0x09, 0x00, 0x00),
+            previous = state,
+        )!!
+        assertEquals(12.6f, stateInvalid.batteryVoltage!!, 0.01f)
+    }
+
+    @Test
+    fun `parseDfmTelemetry decodes coolant oil and outside temp in sub 0x07`() {
+        var state = TopwayCarState.VehicleTelemetryState()
+        // b1: coolant raw 130 -> 130 - 40 = 90°C
+        // b2: oil raw 135 -> 135 - 40 = 95°C
+        // b3: exterior raw 62 -> 62 - 40 = 22°C
+        state = TopwayCarState.parseDfmTelemetry(
+            arg1 = TopwayCarState.CAN_CMD_DFM_VEHICLE_INFO,
+            payload = byteArrayOf(0x07, 130.toByte(), 135.toByte(), 62),
+            previous = state,
+        )!!
+        assertEquals(90, state.coolantTempC)
+        assertEquals(95, state.oilTempC)
+        assertEquals(22, state.exteriorTempC)
+    }
+
+    @Test
+    fun `parseDfmTelemetry decodes driver and passenger seatbelts in sub 0x05`() {
+        var state = TopwayCarState.VehicleTelemetryState()
+        // b1: bit 4 (0x10) = driver seatbelt fastened, bit 5 (0x20) = passenger seatbelt fastened
+        state = TopwayCarState.parseDfmTelemetry(
+            arg1 = TopwayCarState.CAN_CMD_DFM_VEHICLE_INFO,
+            payload = byteArrayOf(0x05, 0x30),
+            previous = state,
+        )!!
+        assertEquals(true, state.driverSeatBeltFastened)
+        assertEquals(true, state.passengerSeatBeltFastened)
+
+        // Unfastened
+        state = TopwayCarState.parseDfmTelemetry(
+            arg1 = TopwayCarState.CAN_CMD_DFM_VEHICLE_INFO,
+            payload = byteArrayOf(0x05, 0x00),
+            previous = state,
+        )!!
+        assertEquals(false, state.driverSeatBeltFastened)
+        assertEquals(false, state.passengerSeatBeltFastened)
+    }
+
+    @Test
+    fun `parseDfmTelemetry decodes fuel economy and computes kmPerLiter in sub 0x06`() {
+        var state = TopwayCarState.VehicleTelemetryState()
+        // Instant fuel = 8.0 L/100km (raw 80 = 0x0050 -> b1=0x50, b2=0x00)
+        // Avg fuel = 7.5 L/100km (raw 75 = 0x004B -> b3=0x4B, b4=0x00)
+        state = TopwayCarState.parseDfmTelemetry(
+            arg1 = TopwayCarState.CAN_CMD_DFM_VEHICLE_INFO,
+            payload = byteArrayOf(0x06, 0x50, 0x00, 0x4B, 0x00),
+            previous = state,
+        )!!
+        assertEquals(8.0f, state.instantFuelL100km!!, 0.01f)
+        assertEquals(7.5f, state.avgFuelL100km!!, 0.01f)
+        // 100 / 8.0 = 12.5 km/L
+        assertEquals(12.5f, state.instantKmPerLiter!!, 0.01f)
+        // 100 / 7.5 = 13.33 km/L
+        assertEquals(13.33f, state.avgKmPerLiter!!, 0.05f)
+    }
+
+    @Test
+    fun `parseDfmTelemetry decodes trip A and trip B in sub 0x04`() {
+        var state = TopwayCarState.VehicleTelemetryState()
+        // speed=0, range=0, odo=0, tripA = 25.5 km (255 = 0x00FF -> b9=0xFF, b10=0x00), tripB = 150.0 km (1500 = 0x05DC -> b11=0xDC, b12=0x05)
+        state = TopwayCarState.parseDfmTelemetry(
+            arg1 = TopwayCarState.CAN_CMD_DFM_VEHICLE_INFO,
+            payload = byteArrayOf(0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF.toByte(), 0x00, 0xDC.toByte(), 0x05),
+            previous = state,
+        )!!
+        assertEquals(25.5f, state.tripAKm!!, 0.01f)
+        assertEquals(150.0f, state.tripBKm!!, 0.01f)
+    }
+
+    @Test
+    fun `computeGalaOffset applies volume steps with hysteresis`() {
+        // Sensitivity 0 (Off)
+        assertEquals(0, TopwayCarState.computeGalaOffset(120.0f, sensitivity = 0))
+
+        // Sensitivity 2 (Medium): thresholds 70 -> +1, 95 -> +2, 115 -> +3
+        assertEquals(0, TopwayCarState.computeGalaOffset(50.0f, sensitivity = 2, previousOffset = 0))
+        assertEquals(1, TopwayCarState.computeGalaOffset(72.0f, sensitivity = 2, previousOffset = 0))
+        assertEquals(2, TopwayCarState.computeGalaOffset(97.0f, sensitivity = 2, previousOffset = 1))
+        assertEquals(3, TopwayCarState.computeGalaOffset(116.0f, sensitivity = 2, previousOffset = 2))
+
+        // Hysteresis dropping from 72 km/h: 67 km/h stays 1
+        assertEquals(1, TopwayCarState.computeGalaOffset(67.0f, sensitivity = 2, previousOffset = 1))
+        // Dropping below 65 km/h drops to 0
+        assertEquals(0, TopwayCarState.computeGalaOffset(64.0f, sensitivity = 2, previousOffset = 1))
+    }
+
+    @Test
+    fun `formatTripSummary builds bilingual summary with distance, km_L and battery`() {
+        val summaryEs = TopwayVehicleOsdOverlay.formatTripSummary(
+            distanceKm = 18.4f,
+            avgKmL = 13.2f,
+            voltage = 14.1f,
+            spanish = true,
+        )
+        assertTrue(summaryEs.contains("Fin de viaje: 18.4 km"))
+        assertTrue(summaryEs.contains("Rendimiento: 13.2 km/L"))
+        assertTrue(summaryEs.contains("Batería: 14.1 V"))
+
+        val summaryEn = TopwayVehicleOsdOverlay.formatTripSummary(
+            distanceKm = 18.4f,
+            avgKmL = 13.2f,
+            voltage = 14.1f,
+            spanish = false,
+        )
+        assertTrue(summaryEn.contains("Trip: 18.4 km"))
+        assertTrue(summaryEn.contains("Avg: 13.2 km/L"))
+        assertTrue(summaryEn.contains("Battery: 14.1 V"))
+    }
 }

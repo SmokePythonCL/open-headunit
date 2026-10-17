@@ -93,6 +93,7 @@ class HomeFragment : Fragment() {
     private lateinit var exitButton: Button
     private lateinit var appsButton: Button
     private lateinit var self_mode_text: TextView
+    private lateinit var wirelessDiagPill: Button
     private var hasAttemptedAutoConnect = false
     private var hasAttemptedSingleUsbAutoConnect = false
     private var activeDialog: androidx.appcompat.app.AlertDialog? = null
@@ -124,6 +125,8 @@ class HomeFragment : Fragment() {
         exitButton = view.findViewById(R.id.exit_button)
         appsButton = view.findViewById(R.id.apps_button)
         self_mode_text = view.findViewById(R.id.self_mode_text)
+        wirelessDiagPill = view.findViewById(R.id.wireless_diag_pill)
+        wirelessDiagPill.setOnClickListener { showWirelessDiagDialog() }
 
         // Portrait layout: cap grid width so square buttons never overflow
         // into the WiFi-pill or Exit-button areas on compact/square devices.
@@ -137,6 +140,7 @@ class HomeFragment : Fragment() {
         updateButtonScale()
         updateButtonVisibility()
         updateExitButtonVisibility()
+        updateWirelessDiagPill()
 
         viewLifecycleOwner.lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -144,6 +148,7 @@ class HomeFragment : Fragment() {
                     updateProjectionButtonText()
                     updateButtonVisibility()
                     updateButtonStyle()
+                    updateWirelessDiagPill()
                 }
             }
         }
@@ -1293,6 +1298,71 @@ class HomeFragment : Fragment() {
 
         exitButton.setTextColor(Color.WHITE)
         appsButton.setTextColor(Color.WHITE)
+    }
+
+    private fun getLocalIpAddress(): String? {
+        try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return null
+            for (intf in interfaces) {
+                if (intf.isLoopback || !intf.isUp) continue
+                for (addr in intf.inetAddresses) {
+                    if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
+                        return addr.hostAddress
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        return null
+    }
+
+    private fun updateWirelessDiagPill() {
+        if (!::wirelessDiagPill.isInitialized || !isAdded) return
+        val ip = getLocalIpAddress()
+        val summary = if (ip != null) {
+            "📶 IP: $ip"
+        } else {
+            "📶 ${getString(R.string.wireless_diag_title)}"
+        }
+        wirelessDiagPill.text = summary
+    }
+
+    private fun showWirelessDiagDialog() {
+        val context = context ?: return
+        val ip = getLocalIpAddress() ?: "127.0.0.1"
+        val settings = App.provide(context).settings
+        val isTopwayBlink = com.andrerinas.openheadunit.connection.wifi.modes.nativeaa.blink.BlinkAutoSerialChannel.isTopwayGocPortPresent()
+        val externalBtNode = com.andrerinas.openheadunit.utils.ExternalBtPolicy.detect({ java.io.File(it).exists() }, { null })
+        val btStatus = when {
+            isTopwayBlink -> "Topway gocsdk BLINK (/dev/rf_serial) ✓"
+            externalBtNode != null -> "$externalBtNode ✓"
+            else -> "Bluetooth estándar de Android"
+        }
+        val wifiModeName = when (settings.wifiConnectionMode) {
+            WifiLauncherMode.NATIVE -> "Native AA"
+            WifiLauncherMode.HELPER -> "Wireless Helper"
+            WifiLauncherMode.AUTO -> "Auto (Headunit Server)"
+            WifiLauncherMode.MANUAL -> "Manual"
+        }
+
+        val message = buildString {
+            append("• ${getString(R.string.wireless_diag_wifi_mode)}: $wifiModeName\n")
+            append("• ${getString(R.string.wireless_diag_ip)}: $ip\n")
+            append("• ${getString(R.string.wireless_diag_bt)}: $btStatus\n")
+            append("• ${getString(R.string.wireless_diag_tcp)}: ${getString(R.string.wireless_diag_ready)}\n\n")
+            append(getString(R.string.wireless_diag_mobile_data_tip))
+        }
+
+        MaterialAlertDialogBuilder(context, R.style.DarkAlertDialog)
+            .setTitle(R.string.wireless_diag_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.wireless_reconnect_now) { _, _ ->
+                AapService.triggerWirelessRearm(context)
+                ToastUtils.showToast(context, getString(R.string.wireless_reconnect_triggered), Toast.LENGTH_SHORT)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     companion object {

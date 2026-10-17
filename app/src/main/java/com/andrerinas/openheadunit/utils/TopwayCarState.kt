@@ -52,6 +52,15 @@ object TopwayCarState {
     /** Query parameter written to `/dev/tw` to request current state from the MCU/driver. */
     const val QUERY_STATE_ARG = 0xFF
 
+    /** Topway MCU analog radio audio ducking (`arg1`: 1=duck FM radio for navigation/speech, 0=restore FM volume). */
+    const val WHAT_FM_DUCKING = 0x0308
+
+    /** Topway MCU hardware master volume command (`arg1`: 1, `arg2`: volume level 0..40). */
+    const val WHAT_MCU_VOLUME = 0x0203
+
+    /** Topway MCU master clock synchronization command (`arg1` = time, `arg2` = date). */
+    const val WHAT_CLOCK_SYNC = 0x0107
+
     const val ACTION_OUT_DARK_START = "com.zjinnova.zlink.action.OUT_DARK_START"
     const val ACTION_OUT_DARK_STOP = "com.zjinnova.zlink.action.OUT_DARK_STOP"
     const val ACTION_ACC_ON = "xy.android.acc.on"
@@ -66,10 +75,27 @@ object TopwayCarState {
         val rangeKm: Int? = null,
         val odometerKm: Float? = null,
         val exteriorTempC: Int? = null,
+        val coolantTempC: Int? = null,
+        val oilTempC: Int? = null,
+        val batteryVoltage: Float? = null,
+        val instantFuelL100km: Float? = null,
+        val avgFuelL100km: Float? = null,
+        val driverSeatBeltFastened: Boolean? = null,
+        val passengerSeatBeltFastened: Boolean? = null,
+        val tripAKm: Float? = null,
+        val tripBKm: Float? = null,
     ) {
         /** Speed in `m/s * 1000` (`speed_e3` in Android Auto `Sensors.SpeedData`). */
         val speedMetersPerSecE3: Int?
             get() = speedKmh?.let { ((it / 3.6f) * 1000f).toInt().coerceAtLeast(0) }
+
+        /** Instant fuel economy converted to km/L (Chilean standard). */
+        val instantKmPerLiter: Float?
+            get() = instantFuelL100km?.let { if (it > 0.05f) 100.0f / it else null }
+
+        /** Average fuel economy converted to km/L (Chilean standard). */
+        val avgKmPerLiter: Float?
+            get() = avgFuelL100km?.let { if (it > 0.05f) 100.0f / it else null }
     }
 
     data class DoorState(
@@ -282,26 +308,92 @@ object TopwayCarState {
                 } else {
                     previous.odometerKm
                 }
-                previous.copy(speedKmh = speedKmh, rangeKm = rangeKm, odometerKm = odometerKm)
+                val tripAKm = if (payload.size >= 11) {
+                    val rawTripA = ((payload[10].toInt() and 0xFF) shl 8) or (payload[9].toInt() and 0xFF)
+                    if (rawTripA != 0xFFFF) (rawTripA / 10.0f) else previous.tripAKm
+                } else previous.tripAKm
+                val tripBKm = if (payload.size >= 13) {
+                    val rawTripB = ((payload[12].toInt() and 0xFF) shl 8) or (payload[11].toInt() and 0xFF)
+                    if (rawTripB != 0xFFFF) (rawTripB / 10.0f) else previous.tripBKm
+                } else previous.tripBKm
+                previous.copy(
+                    speedKmh = speedKmh,
+                    rangeKm = rangeKm,
+                    odometerKm = odometerKm,
+                    tripAKm = tripAKm,
+                    tripBKm = tripBKm,
+                )
             }
             0x05 -> {
                 val b1 = payload[1].toInt() and 0xFF
                 val handbrake = (b1 and 0x01) != 0
                 val reverse = (b1 and 0x02) != 0
                 val accOn = (b1 and 0x08) != 0
-                previous.copy(handbrakeEngaged = handbrake, reverseGear = reverse, accOn = accOn)
+                val driverSeatBelt = (b1 and 0x10) != 0
+                val passengerSeatBelt = (b1 and 0x20) != 0
+                previous.copy(
+                    handbrakeEngaged = handbrake,
+                    reverseGear = reverse,
+                    accOn = accOn,
+                    driverSeatBeltFastened = driverSeatBelt,
+                    passengerSeatBeltFastened = passengerSeatBelt,
+                )
             }
             0x06 -> {
                 if (payload.size < 3) return null
-                val rawRpm = ((payload[2].toInt() and 0xFF) shl 8) or (payload[1].toInt() and 0xFF)
-                val rpm = if (rawRpm in 0..10000) rawRpm else previous.rpm
-                previous.copy(rpm = rpm)
+                if (payload.size in 3..4) {
+                    val rawRpm = ((payload[2].toInt() and 0xFF) shl 8) or (payload[1].toInt() and 0xFF)
+                    val rpm = if (rawRpm in 0..10000) rawRpm else previous.rpm
+                    previous.copy(rpm = rpm)
+                } else {
+                    val rawInstant = ((payload[2].toInt() and 0xFF) shl 8) or (payload[1].toInt() and 0xFF)
+                    val instantFuel = if (rawInstant in 0..1000) rawInstant / 10.0f else previous.instantFuelL100km
+                    val avgFuel = if (payload.size >= 5) {
+                        val rawAvg = ((payload[4].toInt() and 0xFF) shl 8) or (payload[3].toInt() and 0xFF)
+                        if (rawAvg in 0..1000) rawAvg / 10.0f else previous.avgFuelL100km
+                    } else previous.avgFuelL100km
+                    previous.copy(
+                        instantFuelL100km = instantFuel,
+                        avgFuelL100km = avgFuel,
+                    )
+                }
             }
             0x07 -> {
                 if (payload.size < 3) return null
-                val rawTemp = payload[2].toInt() and 0xFF
-                val extTempC = if (rawTemp in 1..215) (rawTemp - 40) else previous.exteriorTempC
-                previous.copy(exteriorTempC = extTempC)
+                val rawB1 = payload[1].toInt() and 0xFF
+                val rawB2 = payload[2].toInt() and 0xFF
+                val coolantTempC = if (rawB1 in 1..215) (rawB1 - 40) else previous.coolantTempC
+                val oilTempC = if (payload.size >= 4 && rawB2 in 1..215) (rawB2 - 40) else previous.oilTempC
+                val extTempC = when {
+                    payload.size >= 4 -> {
+                        val rawB3 = payload[3].toInt() and 0xFF
+                        if (rawB3 in 1..215) (rawB3 - 40) else previous.exteriorTempC
+                    }
+                    else -> {
+                        if (rawB2 in 1..215) (rawB2 - 40) else previous.exteriorTempC
+                    }
+                }
+                previous.copy(
+                    coolantTempC = coolantTempC,
+                    oilTempC = oilTempC,
+                    exteriorTempC = extTempC,
+                )
+            }
+            0x08 -> {
+                if (payload.size < 3) return null
+                val rawRpm = ((payload[2].toInt() and 0xFF) shl 8) or (payload[1].toInt() and 0xFF)
+                val rpm = when {
+                    rawRpm in 0..10000 -> rawRpm
+                    rawRpm / 4 in 0..10000 -> rawRpm / 4
+                    else -> previous.rpm
+                }
+                previous.copy(rpm = rpm)
+            }
+            0x09 -> {
+                if (payload.size < 3) return null
+                val rawMv = ((payload[2].toInt() and 0xFF) shl 8) or (payload[1].toInt() and 0xFF)
+                val voltage = if (rawMv in 5000..20000) (rawMv / 1000.0f) else previous.batteryVoltage
+                previous.copy(batteryVoltage = voltage)
             }
             else -> null
         }
@@ -540,6 +632,154 @@ object TopwayCarState {
             }
         } catch (e: Exception) {
             AppLog.w("TopwayCarState: Failed to query initial /dev/tw state: ${e.message}")
+        }
+    }
+
+    /**
+     * Controls Topway MCU analog radio audio ducking (`0x0308`).
+     * Setting this to `true` ducks the FM radio tuner so navigation speech and voice assistant
+     * instructions are clearly audible, and restores full FM volume when speech finishes.
+     */
+    fun setFmDucking(enabled: Boolean) {
+        if (!isSupported) return
+        val instance = twUtil ?: return
+        try {
+            val clazz = instance.javaClass
+            val writeMethod = clazz.getMethod(
+                "write",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+            )
+            writeMethod.invoke(instance, WHAT_FM_DUCKING, if (enabled) 1 else 0)
+            AppLog.i("TopwayCarState: Set FM radio ducking: $enabled (0x0308)")
+        } catch (e: Exception) {
+            AppLog.w("TopwayCarState: Failed to write FM ducking: ${e.message}")
+        }
+    }
+
+    /**
+     * Sets the Topway MCU master hardware volume (`0x0203`, arg1=1, arg2=level 0..40).
+     */
+    fun setMcuVolume(volumeLevel: Int) {
+        if (!isSupported) return
+        val instance = twUtil ?: return
+        try {
+            val clamped = volumeLevel.coerceIn(0, 40)
+            val clazz = instance.javaClass
+            val writeMethod = clazz.getMethod(
+                "write",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+            )
+            writeMethod.invoke(instance, WHAT_MCU_VOLUME, 1, clamped)
+            AppLog.i("TopwayCarState: Set MCU volume: $clamped (0x0203)")
+        } catch (e: Exception) {
+            AppLog.w("TopwayCarState: Failed to write MCU volume: ${e.message}")
+        }
+    }
+
+    /**
+     * Sends vehicle configuration settings to the Raise Dongfeng CANbox (`0x0501`).
+     */
+    fun writeDfmSetting(cmd: Int, sub: Int, value: Int) {
+        if (!isSupported) return
+        val instance = twUtil ?: return
+        try {
+            val clazz = instance.javaClass
+            val write4 = clazz.getMethod(
+                "write",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                Any::class.java,
+            )
+            val payload = byteArrayOf(sub.toByte(), value.toByte())
+            write4.invoke(instance, WHAT_CANBUS, cmd, payload.size, payload)
+            AppLog.i("TopwayCarState: Wrote DFM setting cmd=0x%02X sub=%d val=%d".format(cmd, sub, value))
+        } catch (e: Exception) {
+            AppLog.w("TopwayCarState: Failed to write DFM setting: ${e.message}")
+        }
+    }
+
+    /**
+     * Synchronizes phone/system clock to the vehicle instrument cluster clock via Topway MCU `0x0107`.
+     */
+    fun syncPhoneTimeToVehicle(context: Context) {
+        if (!isSupported) return
+        val instance = twUtil ?: return
+        try {
+            val cal = java.util.Calendar.getInstance()
+            val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
+            val minute = cal.get(java.util.Calendar.MINUTE)
+            val second = cal.get(java.util.Calendar.SECOND)
+            val is24h = android.text.format.DateFormat.is24HourFormat(context)
+            val year = (cal.get(java.util.Calendar.YEAR) - 2000).coerceAtLeast(0)
+            val month = cal.get(java.util.Calendar.MONTH) + 1
+            val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
+
+            val arg1 = (if (is24h) 0 else 1) or (hour shl 8) or (minute shl 16) or (second shl 24)
+            val arg2 = year or (month shl 8) or (day shl 16)
+
+            val clazz = instance.javaClass
+            val writeMethod = clazz.getMethod(
+                "write",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+            )
+            writeMethod.invoke(instance, WHAT_CLOCK_SYNC, arg1, arg2)
+            AppLog.i(
+                "TopwayCarState: Synchronized time to cluster: %02d:%02d:%02d (24h=%b)".format(
+                    hour, minute, second, is24h,
+                )
+            )
+        } catch (e: Exception) {
+            AppLog.w("TopwayCarState: Failed to sync time to vehicle: ${e.message}")
+        }
+    }
+
+    /**
+     * Computes GALA (Speed-sensitive Auto Volume Adjustment) volume step offset.
+     * Sensitivity: 0=Off, 1=Low, 2=Medium, 3=High.
+     */
+    fun computeGalaOffset(speedKmh: Float, sensitivity: Int, previousOffset: Int = 0): Int {
+        if (sensitivity <= 0 || speedKmh < 30.0f) return 0
+        return when (sensitivity) {
+            1 -> {
+                when {
+                    speedKmh >= 115.0f -> 2
+                    previousOffset >= 2 && speedKmh >= 110.0f -> 2
+                    speedKmh >= 85.0f -> 1
+                    previousOffset >= 1 && speedKmh >= 80.0f -> 1
+                    else -> 0
+                }
+            }
+            2 -> {
+                when {
+                    speedKmh >= 115.0f -> 3
+                    previousOffset >= 3 && speedKmh >= 110.0f -> 3
+                    speedKmh >= 95.0f -> 2
+                    previousOffset >= 2 && speedKmh >= 90.0f -> 2
+                    speedKmh >= 70.0f -> 1
+                    previousOffset >= 1 && speedKmh >= 65.0f -> 1
+                    else -> 0
+                }
+            }
+            3 -> {
+                when {
+                    speedKmh >= 120.0f -> 4
+                    previousOffset >= 4 && speedKmh >= 115.0f -> 4
+                    speedKmh >= 100.0f -> 3
+                    previousOffset >= 3 && speedKmh >= 95.0f -> 3
+                    speedKmh >= 80.0f -> 2
+                    previousOffset >= 2 && speedKmh >= 75.0f -> 2
+                    speedKmh >= 60.0f -> 1
+                    previousOffset >= 1 && speedKmh >= 55.0f -> 1
+                    else -> 0
+                }
+            }
+            else -> 0
         }
     }
 

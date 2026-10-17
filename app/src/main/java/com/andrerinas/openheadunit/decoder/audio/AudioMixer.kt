@@ -31,7 +31,8 @@ class AudioMixer(
     private val keepOutputActive: Boolean = false,
     private val duckMediaForSpeech: Boolean = false,
     private val canRender: () -> Boolean = { true },
-    private val onRecoveryActivity: () -> Unit = {}
+    private val onRecoveryActivity: () -> Unit = {},
+    private val onSpeechActiveChanged: (Boolean) -> Unit = {}
 ) {
     companion object {
         const val OUTPUT_SAMPLE_RATE = 48000
@@ -85,6 +86,7 @@ class AudioMixer(
     private val renderDeadline = PcmRenderDeadline()
     private val limiter = MixerSoftClipper()
     private val ducking = MixerDuckingEnvelope(OUTPUT_SAMPLE_RATE)
+    @Volatile private var lastSpeechActive = false
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -129,6 +131,10 @@ class AudioMixer(
 
     fun stop() {
         requestStop()
+        if (lastSpeechActive) {
+            lastSpeechActive = false
+            try { onSpeechActiveChanged(false) } catch (_: Exception) {}
+        }
         try { mixThread?.join(1000) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
         // Only the output thread closes its stream. A timed-out join must not free a native
         // handle while write() is using it.
@@ -219,6 +225,11 @@ class AudioMixer(
             for (i in destination.indices) destination[i] += (channelBuffer[i] * gain).toInt()
         }
         ducking.setSpeechActive(duckMediaForSpeech && speechActive)
+        if (speechActive != lastSpeechActive) {
+            lastSpeechActive = speechActive
+            try { onSpeechActiveChanged(speechActive) }
+            catch (e: Exception) { AppLog.w("AudioMixer: onSpeechActiveChanged error: ${e.message}") }
+        }
         limiter.setEnabled(activeChannels > 1 || boosted)
         var mediaGain = 1f
         for (i in mixBuffer.indices) {

@@ -108,6 +108,9 @@ class AudioDecoder {
     }
 
     private fun releaseMixer() {
+        if (com.andrerinas.openheadunit.utils.TopwayCarState.isSupported) {
+            com.andrerinas.openheadunit.utils.TopwayCarState.setFmDucking(false)
+        }
         mixer?.stop()
         mixer = null
     }
@@ -151,9 +154,15 @@ class AudioDecoder {
                 audioTracks.clear()
                 releaseMixer()
             }
+            val duckingCallback = { active: Boolean ->
+                if (com.andrerinas.openheadunit.utils.TopwayCarState.isSupported) {
+                    com.andrerinas.openheadunit.utils.TopwayCarState.setFmDucking(active)
+                }
+            }
             if (staticAudioFocus && mixer == null) {
                 mixer = AudioMixer(stream, attachHwDspEqualizer, preferAAudio = preferAAudio,
-                    keepOutputActive = true, duckMediaForSpeech = true, canRender = callbacks.canRender)
+                    keepOutputActive = true, duckMediaForSpeech = true, canRender = callbacks.canRender,
+                    onSpeechActiveChanged = duckingCallback)
                     .also { it.start() }
                 createdSharedMixer = true
                 AppLog.i("AudioDecoder: Created shared AudioMixer on channel $channel")
@@ -162,7 +171,8 @@ class AudioDecoder {
             sinkMixer = if (staticAudioFocus) checkNotNull(mixer) else {
                 AudioMixer(stream, attachHwDspEqualizer, audioLatencyMultiplier, preferAAudio,
                     canRender = callbacks.canRender,
-                    onRecoveryActivity = { callbacks.activity(channel, owner) }).also { it.start() }
+                    onRecoveryActivity = { callbacks.activity(channel, owner) },
+                    onSpeechActiveChanged = duckingCallback).also { it.start() }
             }
             val track = AudioTrackWrapper(
                 sampleRateInHz = sampleRate,
