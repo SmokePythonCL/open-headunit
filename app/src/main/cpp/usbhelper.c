@@ -2,6 +2,10 @@
 #include <android/log.h>
 #include <string.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
+#include <errno.h>
 #include "libusb.h"
 
 #define LOG_TAG "UsbNative"
@@ -193,4 +197,47 @@ Java_com_andrerinas_openheadunit_connection_usb_UsbNative_accModeSwitch(JNIEnv *
     }
 
     return 0;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_andrerinas_openheadunit_connection_wifi_modes_nativeaa_blink_BlinkTtyNative_openRawTty(
+    JNIEnv *env,
+    jclass clazz,
+    jstring path_str
+) {
+    (void)clazz;
+    if (!path_str) return -1;
+    const char *path = (*env)->GetStringUTFChars(env, path_str, NULL);
+    if (!path) return -2;
+
+    int fd = open(path, O_RDWR | O_NOCTTY);
+    if (fd < 0) {
+        int err = errno;
+        LOGE("openRawTty: failed to open %s: errno=%d", path, err);
+        (*env)->ReleaseStringUTFChars(env, path_str, path);
+        return err > 0 ? -err : -1;
+    }
+
+    struct termios tio;
+    if (tcgetattr(fd, &tio) == 0) {
+        cfmakeraw(&tio);
+#ifdef IUCLC
+        tio.c_iflag &= ~IUCLC;
+#endif
+        tio.c_iflag &= ~(ICRNL | INLCR | IGNCR | IXON | IXOFF);
+        tio.c_oflag &= ~OPOST;
+        tio.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+        tio.c_cc[VMIN] = 1;
+        tio.c_cc[VTIME] = 0;
+        if (tcsetattr(fd, TCSANOW, &tio) != 0) {
+            LOGE("openRawTty: tcsetattr failed on %s: errno=%d", path, errno);
+        }
+        tcflush(fd, TCIFLUSH);
+    } else {
+        LOGE("openRawTty: tcgetattr failed on %s: errno=%d", path, errno);
+    }
+
+    LOGI("openRawTty: opened %s in raw mode fd=%d", path, fd);
+    (*env)->ReleaseStringUTFChars(env, path_str, path);
+    return fd;
 }

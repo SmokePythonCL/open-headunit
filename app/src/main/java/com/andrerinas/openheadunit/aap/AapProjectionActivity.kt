@@ -54,6 +54,8 @@ import com.andrerinas.openheadunit.utils.Settings
 import com.andrerinas.openheadunit.utils.ToastUtils
 import com.andrerinas.openheadunit.view.OverlayTouchView
 import com.andrerinas.openheadunit.view.PerformanceOverlay
+import com.andrerinas.openheadunit.view.TopwayVehicleOsdOverlay
+import com.andrerinas.openheadunit.utils.TopwayCarState
 import com.andrerinas.openheadunit.utils.HeadUnitScreenConfig
 import com.andrerinas.openheadunit.utils.SystemUI
 import com.andrerinas.openheadunit.aap.AapService
@@ -131,6 +133,9 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
     private var touchOverlayView: OverlayTouchView? = null
     private val performanceOverlay by lazy {
         PerformanceOverlay(settings) { videoDecoder.lastFrameRenderedMs }
+    }
+    private val vehicleOsdOverlay by lazy {
+        TopwayVehicleOsdOverlay(settings)
     }
 
     private var isOrientationReceiverRegistered = false
@@ -547,6 +552,17 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
                 performanceOverlay.setVisible(true)
                 performanceOverlay.start()
             }
+
+            if (TopwayCarState.isSupported) {
+                if (settings.showVehicleOsd) {
+                    if (!vehicleOsdOverlay.isAttached) {
+                        findViewById<FrameLayout>(R.id.container)?.let { vehicleOsdOverlay.attachTo(it) }
+                    }
+                    vehicleOsdOverlay.start(this@AapProjectionActivity)
+                } else {
+                    vehicleOsdOverlay.stop()
+                }
+            }
         }
     }
 
@@ -572,6 +588,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             val mirror = if (settings.hudMirroring) -1.0f else 1.0f
             findViewById<View>(R.id.loading_overlay)?.scaleX = mirror
             performanceOverlay.setMirror(mirror)
+            vehicleOsdOverlay.setMirror(mirror)
         }
     }
 
@@ -1016,6 +1033,9 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         if (settings.showPerformanceOverlay) {
             attachPerformanceOverlay()
         }
+        if (TopwayCarState.isSupported && settings.showVehicleOsd) {
+            findViewById<FrameLayout>(R.id.container)?.let { vehicleOsdOverlay.attachTo(it) }
+        }
 
         videoDecoder.dimensionsListener = this
 
@@ -1173,6 +1193,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         // Ensure loading overlay is on top of everything
         loadingOverlay?.bringToFront()
         performanceOverlay.bringToFront()
+        vehicleOsdOverlay.bringToFront()
 
         // Set up custom loading screen if configured
         setupCustomLoadingScreen()
@@ -1211,6 +1232,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         isForeground = false
         AppLog.i("AapProjectionActivity: onPause")
         super.onPause()
+        vehicleOsdOverlay.stop()
         RenameNotice.dismiss()
         Aa174Notice.dismiss()
         // Clear any activity-local fullscreen override when leaving the Activity so
@@ -1263,6 +1285,12 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         userLeftDeliberately = false
         closeCallRaiseEpisode("the projection is back in front")
         AppLog.i("AapProjectionActivity: onResume")
+        if (TopwayCarState.isSupported && settings.showVehicleOsd) {
+            if (!vehicleOsdOverlay.isAttached) {
+                findViewById<FrameLayout>(R.id.container)?.let { vehicleOsdOverlay.attachTo(it) }
+            }
+            vehicleOsdOverlay.start(this)
+        }
         // Show the one-time rename notice even here, on top of an active projection.
         RenameNotice.maybeShow(this, App.provide(this).settings)
         Aa174Notice.maybeShow(this, App.provide(this).settings)
@@ -2347,6 +2375,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         // stopCustomLoadingMedia releases both.
         stopCustomLoadingMedia()
         performanceOverlay.release()
+        vehicleOsdOverlay.release()
         AppLog.i("AapProjectionActivity.onDestroy called. isFinishing=$isFinishing")
         App.isPiPActive = false
         // On a singleTask relaunch the new instance's onCreate runs before this old instance's
@@ -2480,6 +2509,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         // Baseline for the "no frame drawn while streaming" renderer check (issue #767).
         projectionStartMs = SystemClock.elapsedRealtime()
         performanceOverlay.bringToFront()
+        vehicleOsdOverlay.bringToFront()
     }
 
     private fun attachPerformanceOverlay() {

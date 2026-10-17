@@ -2730,6 +2730,7 @@ class NativeAaHandshakeManager(
             mayServeHandshake = { NativeHandoffPolicy.shouldServeHandshake(consecutiveHandshakeFailures) },
             onPhoneEvidence = { resetHandshakeBackoff() },
             onRefusalChanged = { refusal -> onBlinkRefusalChanged(refusal) },
+            onModuleAddress = { addr -> seedBluetoothAddressFromModule(addr) },
             stockClient = { StockCarLink.state(context.packageManager) }
         )
         moduleCarrier = carrier

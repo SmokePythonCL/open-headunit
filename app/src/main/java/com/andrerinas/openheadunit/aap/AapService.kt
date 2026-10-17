@@ -54,7 +54,13 @@ import com.andrerinas.openheadunit.utils.CarLauncherManager
 import com.andrerinas.openheadunit.utils.BluetoothHelper
 import com.andrerinas.openheadunit.utils.DummyVpnPolicy
 import com.andrerinas.openheadunit.utils.ToastUtils
+import com.andrerinas.openheadunit.utils.TopwayCarState
+import com.andrerinas.openheadunit.aap.protocol.messages.CarSpeedEvent
+import com.andrerinas.openheadunit.aap.protocol.messages.FuelLevelEvent
+import com.andrerinas.openheadunit.aap.protocol.messages.GearEvent
 import com.andrerinas.openheadunit.aap.protocol.messages.NightModeEvent
+import com.andrerinas.openheadunit.aap.protocol.messages.ParkingBrakeEvent
+import com.andrerinas.openheadunit.aap.protocol.messages.RpmEvent
 import com.andrerinas.openheadunit.aap.protocol.proto.MediaPlayback
 import com.andrerinas.openheadunit.decoder.audio.MicRecorder
 import com.andrerinas.openheadunit.connection.AutoConnectHoldPolicy
@@ -603,10 +609,77 @@ class AapService : Service() {
         }
     }
 
+    private var lastSentTelemetry: TopwayCarState.VehicleTelemetryState? = null
+    private var topwayWakeFollowUpJob: Job? = null
+
+    private val topwayCarStateListener = object : TopwayCarState.Listener {
+        override fun onTelemetryChanged(telemetry: TopwayCarState.VehicleTelemetryState) {
+            sendTopwayTelemetryIfNeeded(telemetry, force = false)
+        }
+
+        override fun onAccChanged(accOn: Boolean) {
+            if (accOn) {
+                AppLog.i("AapService: Topway ACC_ON detected -> triggering fast wake & CANbus state query")
+                TopwayCarState.queryCurrentState()
+                onTopwayFastWake("Topway ACC_ON")
+            }
+        }
+    }
+
+    private fun sendTopwayTelemetryIfNeeded(
+        telemetry: TopwayCarState.VehicleTelemetryState,
+        force: Boolean
+    ) {
+        if (!TopwayCarState.isSupported) return
+        if (!commManager.isConnected) return
+        val appSettings = App.provide(this).settings
+        if (!appSettings.sendVehicleTelemetry) return
+
+        val prev = if (force) null else lastSentTelemetry
+        lastSentTelemetry = telemetry
+
+        val effectiveSpeedE3 = if (appSettings.fakeSpeed) 500 else (telemetry.speedMetersPerSecE3 ?: 0)
+        val prevSpeedE3 = if (appSettings.fakeSpeed) 500 else (prev?.speedMetersPerSecE3 ?: 0)
+        if (prev == null || effectiveSpeedE3 != prevSpeedE3) {
+            commManager.send(CarSpeedEvent(effectiveSpeedE3))
+        }
+
+        val rpm = telemetry.rpm ?: 0
+        if (prev == null || rpm != (prev.rpm ?: 0)) {
+            commManager.send(RpmEvent(rpm))
+        }
+
+        val handbrake = if (appSettings.fakeSpeed) true else (telemetry.handbrakeEngaged ?: true)
+        val prevHandbrake = if (appSettings.fakeSpeed) true else (prev?.handbrakeEngaged ?: true)
+        if (prev == null || handbrake != prevHandbrake) {
+            commManager.send(ParkingBrakeEvent(handbrake))
+        }
+
+        val gearEvent = GearEvent.fromReverseAndHandbrake(
+            reverseGear = telemetry.reverseGear == true,
+            handbrakeEngaged = telemetry.handbrakeEngaged
+        )
+        val prevGear = prev?.let {
+            GearEvent.fromReverseAndHandbrake(
+                reverseGear = it.reverseGear == true,
+                handbrakeEngaged = it.handbrakeEngaged
+            ).gear
+        }
+        if (prevGear == null || gearEvent.gear != prevGear) {
+            commManager.send(gearEvent)
+        }
+
+        val rangeKm = telemetry.rangeKm
+        if (rangeKm != null && (prev == null || rangeKm != prev.rangeKm)) {
+            commManager.send(FuelLevelEvent(rangeKm = rangeKm, lowFuel = rangeKm in 1..60))
+        }
+    }
+
     private fun refreshSensors() {
         AppLog.i("AapService: Received request to refresh all sensors")
         // Re-send current states
         nightModeManager?.resendCurrentState()
+        sendTopwayTelemetryIfNeeded(TopwayCarState.telemetryState, force = true)
     }
 
     private fun restartAudio() {
@@ -702,7 +775,10 @@ class AapService : Service() {
                     AppLog.i("WakeDetect: SCREEN_ON (screen was off for ${offSec}s)")
                     AccPowerState.noteOn()
                     replaySleepHold("SCREEN_ON")
-                    if (offDuration > HIBERNATE_WAKE_THRESHOLD_MS) {
+                    if (TopwayCarState.isSupported) {
+                        TopwayCarState.queryCurrentState()
+                        onTopwayFastWake("Topway SCREEN_ON after ${offSec}s")
+                    } else if (offDuration > HIBERNATE_WAKE_THRESHOLD_MS) {
                         AccPowerState.noteWake()
                         rearmNativeHotspotAfterWake("SCREEN_ON after ${offSec}s sleep")
                     }
@@ -817,15 +893,51 @@ class AapService : Service() {
     }
 
     /**
+     * Fast wake path for Topway head units waking from `+SLEEP3` RAM suspend or ACC ON.
+     * Re-verifies the Hotspot and immediately sends `AT#VE + AT#QI` to `gocsdk` on `/dev/rf_serial`,
+     * plus a 2.5s follow-up poke once `gocsdk` finishes re-establishing HFP with the phone.
+     */
+    private fun onTopwayFastWake(trigger: String) {
+        if (!TopwayCarState.isSupported) return
+        AccPowerState.noteOn()
+        AccPowerState.noteWake()
+        replaySleepHold(trigger)
+        if (commManager.isConnected ||
+            commManager.connectionState.value is CommManager.ConnectionState.Connecting ||
+            usbLauncherManager.isSwitchingToProjection()
+        ) {
+            return
+        }
+        rearmNativeHotspotAfterWake(trigger, bypassDebounce = true)
+        val native = wifiLauncherManager.active as? WifiLauncherNative
+        if (native != null && wifiLauncherManager.activeIsStarted) {
+            if (native.handshakeManager?.isStarted() != true) {
+                native.handshakeManager?.start()
+            } else if (native.handshakeManager?.isActive() != true) {
+                native.reopenListeners()
+            }
+            native.handshakeManager?.wakeOverModule()
+            topwayWakeFollowUpJob?.cancel()
+            topwayWakeFollowUpJob = serviceScope.launch {
+                delay(2500L)
+                if (!isActive || isDestroying || commManager.isConnected ||
+                    commManager.connectionState.value is CommManager.ConnectionState.Connecting
+                ) return@launch
+                (wifiLauncherManager.active as? WifiLauncherNative)?.handshakeManager?.wakeOverModule()
+            }
+        }
+    }
+
+    /**
      * A sleep can take the hotspot down under an armed Native run, which nothing else re-reads.
      * The Bluetooth listeners are left to their own radio-state recovery.
      */
-    private fun rearmNativeHotspotAfterWake(trigger: String) {
+    private fun rearmNativeHotspotAfterWake(trigger: String, bypassDebounce: Boolean = false) {
         val launcher = wifiLauncherManager.active as? WifiLauncherNative ?: return
         if (launcher.strategy != NativeStrategy.HOTSPOT || !wifiLauncherManager.activeIsStarted) return
         if (commManager.isConnected || commManager.connectionState.value is CommManager.ConnectionState.Connecting) return
         val now = SystemClock.elapsedRealtime()
-        if (now - lastWakeRearmTimestamp < 10_000) return
+        if (!bypassDebounce && now - lastWakeRearmTimestamp < 10_000) return
         lastWakeRearmTimestamp = now
         AppLog.i("WakeDetect: re-reading the Native AA hotspot after a wake ($trigger)")
         launcher.refreshAfterWake()
@@ -1092,6 +1204,7 @@ class AapService : Service() {
         StationStandDown.restore(this)
         setupCarMode()
         setupNightMode()
+        TopwayCarState.registerListener(this, topwayCarStateListener)
         commManager.onSessionFailure = { reason ->
             emitSessionState(SessionStateIntent.STATE_FAILED, reason)
             projectingSinceMs = 0L
@@ -1621,6 +1734,7 @@ class AapService : Service() {
         // still own recovery; an end after the open has run onConnected and needs the full cleanup.
         if (!state.hadPhysicalConnection && state.settingsRetryOwner?.acceptsSettingsRestart(state) == true) return
         cancelProjectionRaiseDeadline()
+        lastSentTelemetry = null
         // Consumed by every end, so a mark that no Native re-arm reads cannot mute a later wake.
         val endedByHand = sessionEndedByHand
         sessionEndedByHand = false
@@ -2960,6 +3074,8 @@ class AapService : Service() {
         try { unregisterReceiver(mediaButtonReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(wakeDetectReceiver) } catch (_: Exception) {}
         sleepReplayJob?.cancel()
+        topwayWakeFollowUpJob?.cancel()
+        TopwayCarState.unregisterListener(topwayCarStateListener)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
             try { unregisterReceiver(legacyWifiJoinReceiver) } catch (_: Exception) {}
         }

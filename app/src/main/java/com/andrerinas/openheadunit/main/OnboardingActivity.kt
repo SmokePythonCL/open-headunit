@@ -811,13 +811,23 @@ class OnboardingActivity : BaseActivity() {
         findViewById<MaterialButton>(R.id.onb_night_button)?.text = labels[idx]
     }
 
+    private fun hasHardwareLightSensor(): Boolean {
+        val sm = getSystemService(android.content.Context.SENSOR_SERVICE) as? android.hardware.SensorManager
+        return sm?.getDefaultSensor(android.hardware.Sensor.TYPE_LIGHT) != null
+    }
+
     private fun showThemeDialog() {
+        val hasSensor = hasHardwareLightSensor()
         val labels = resources.getStringArray(R.array.app_theme)
+        val availableThemes = Settings.AppTheme.values().filter {
+            hasSensor || it != Settings.AppTheme.LIGHT_SENSOR
+        }
+        val filteredLabels = availableThemes.map { labels[it.value] }.toTypedArray()
+        val checkedIndex = availableThemes.indexOf(settings.appTheme).coerceAtLeast(0)
         MaterialAlertDialogBuilder(this, R.style.DarkAlertDialog)
             .setTitle(R.string.onb_appearance_theme_label)
-            .setSingleChoiceItems(labels, settings.appTheme.value) { dialog, which ->
-                val newTheme = Settings.AppTheme.values().firstOrNull { it.value == which }
-                    ?: Settings.AppTheme.AUTOMATIC
+            .setSingleChoiceItems(filteredLabels, checkedIndex) { dialog, which ->
+                val newTheme = availableThemes.getOrElse(which) { Settings.AppTheme.AUTOMATIC }
                 settings.appTheme = newTheme
                 updateThemeButtonText()
                 dialog.dismiss()
@@ -828,11 +838,17 @@ class OnboardingActivity : BaseActivity() {
     }
 
     private fun showNightModeDialog() {
+        val hasSensor = hasHardwareLightSensor()
         val labels = resources.getStringArray(R.array.night_mode)
+        val availableModes = Settings.NightMode.values().filter {
+            hasSensor || it != Settings.NightMode.LIGHT_SENSOR
+        }
+        val filteredLabels = availableModes.map { labels[it.value] }.toTypedArray()
+        val checkedIndex = availableModes.indexOf(settings.nightMode).coerceAtLeast(0)
         MaterialAlertDialogBuilder(this, R.style.DarkAlertDialog)
             .setTitle(R.string.onb_appearance_night_label)
-            .setSingleChoiceItems(labels, settings.nightMode.value) { dialog, which ->
-                settings.nightMode = Settings.NightMode.fromInt(which) ?: Settings.NightMode.AUTO
+            .setSingleChoiceItems(filteredLabels, checkedIndex) { dialog, which ->
+                settings.nightMode = availableModes.getOrElse(which) { Settings.NightMode.AUTO }
                 updateNightButtonText()
                 dialog.dismiss()
             }

@@ -1266,4 +1266,24 @@
     <string name="pref_set_default_launcher_title">Aplicación de inicio predeterminada</string>
     <string name="pref_default_launcher_status_active">Activo (Tocar para gestionar)</string>
     <string name="pref_default_launcher_status_inactive">No establecido (Tocar para configurar)</string>
+    <string name="send_vehicle_telemetry">Telemetría del vehículo hacia Android Auto (CANbus)</string>
+    <string name="send_vehicle_telemetry_description">Envía velocidad real (VSS), RPM, freno de mano, marcha y autonomía desde el CANbus hacia Android Auto para posicionamiento en túneles y alertas del tablero</string>
+    <string name="show_vehicle_osd">Barra flotante de Puertas y Climatizador sobre Android Auto</string>
+    <string name="show_vehicle_osd_description">Muestra siempre en pantalla sobre Android Auto la apertura de puertas y cambios del climatizador o calefactor de vidrios sin interrumpir el toque</string>
+    <string name="osd_door_fl">Puerta Del. Izq.</string>
+    <string name="osd_door_fr">Puerta Del. Der.</string>
+    <string name="osd_door_rl">Puerta Tras. Izq.</string>
+    <string name="osd_door_rr">Puerta Tras. Der.</string>
+    <string name="osd_door_trunk">Maletero</string>
+    <string name="osd_door_hood">Capó</string>
+    <string name="osd_doors_open_title">Puerta abierta</string>
+    <string name="osd_climate_title">Climatizador</string>
+    <string name="osd_climate_off">Climatizador apagado</string>
+    <string name="osd_front_defrost">Desempañador Parabrisa</string>
+    <string name="osd_rear_defrost">Calefactor Luneta</string>
+    <string name="osd_recirc_inner">Recirculación</string>
+    <string name="osd_recirc_outer">Aire Exterior</string>
+    <string name="osd_fan_speed">Vent. %1$d/7</string>
+    <string name="osd_ext_temp">Ext %1$d°C</string>
 </resources>
+

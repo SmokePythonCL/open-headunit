@@ -143,9 +143,9 @@ class SettingsFragment : Fragment() {
         // Dark mode
         "darkModeSettings",
         // Automation
-        "autoStartSettings", "autoConnectSettings", "enableCarLauncher",
+        "autoStartSettings", "autoConnectSettings", "enableCarLauncher", "showVehicleOsd",
         // Navigation
-        "gpsNavigation",
+        "gpsNavigation", "sendVehicleTelemetry",
         // Graphic
         "resolution", "dpiPixelDensity", "viewMode", "screenOrientation", "startInFullscreenMode",
         // Theming
@@ -195,6 +195,8 @@ class SettingsFragment : Fragment() {
     private var pendingScreenOrientation: Settings.ScreenOrientation? = null
     private var pendingAppLanguage: String? = null
     private var pendingFakeSpeed: Boolean? = null
+    private var pendingSendVehicleTelemetry: Boolean? = null
+    private var pendingShowVehicleOsd: Boolean? = null
     private var pendingNarrowBandProfileCap: Boolean? = null
     private var pendingDebugVideoLowLatency: Boolean? = null
     private var pendingAllowExternalConfiguration: Boolean? = null
@@ -394,6 +396,8 @@ class SettingsFragment : Fragment() {
         pendingRaiseProjectionDuringCall = settings.raiseProjectionDuringCall
         pendingAutoEnableHotspot = settings.autoEnableHotspot
         pendingFakeSpeed = settings.fakeSpeed
+        pendingSendVehicleTelemetry = settings.sendVehicleTelemetry
+        pendingShowVehicleOsd = settings.showVehicleOsd
         pendingUseLibusb = settings.useLibusb
         pendingNarrowBandProfileCap = settings.narrowBandProfileCap
         pendingDebugVideoLowLatency = settings.debugVideoLowLatency
@@ -532,6 +536,8 @@ class SettingsFragment : Fragment() {
         pendingRaiseProjectionDuringCall = settings.raiseProjectionDuringCall
         pendingAutoEnableHotspot = settings.autoEnableHotspot
         pendingFakeSpeed = settings.fakeSpeed
+        pendingSendVehicleTelemetry = settings.sendVehicleTelemetry
+        pendingShowVehicleOsd = settings.showVehicleOsd
         pendingUseLibusb = settings.useLibusb
         pendingNarrowBandProfileCap = settings.narrowBandProfileCap
         pendingDebugVideoLowLatency = settings.debugVideoLowLatency
@@ -784,6 +790,8 @@ class SettingsFragment : Fragment() {
         pendingRaiseProjectionDuringCall?.let { if (it != settings.raiseProjectionDuringCall) settings.raiseProjectionDuringCall = it }
         pendingAutoEnableHotspot?.let { if (it != settings.autoEnableHotspot) settings.autoEnableHotspot = it }
         pendingFakeSpeed?.let { if (it != settings.fakeSpeed) settings.fakeSpeed = it }
+        pendingSendVehicleTelemetry?.let { if (it != settings.sendVehicleTelemetry) settings.sendVehicleTelemetry = it }
+        pendingShowVehicleOsd?.let { if (it != settings.showVehicleOsd) settings.showVehicleOsd = it }
         pendingUseLibusb?.let { if (it != settings.useLibusb) settings.useLibusb = it }
         pendingNarrowBandProfileCap?.let { if (it != settings.narrowBandProfileCap) settings.narrowBandProfileCap = it }
         pendingDebugVideoLowLatency?.let { if (it != settings.debugVideoLowLatency) settings.debugVideoLowLatency = it }
@@ -937,6 +945,8 @@ class SettingsFragment : Fragment() {
                         pendingRaiseProjectionDuringCall != settings.raiseProjectionDuringCall ||
                         pendingAutoEnableHotspot != settings.autoEnableHotspot ||
                         pendingFakeSpeed != settings.fakeSpeed ||
+                        pendingSendVehicleTelemetry != settings.sendVehicleTelemetry ||
+                        pendingShowVehicleOsd != settings.showVehicleOsd ||
                         pendingWifiConnectionMode != settings.wifiConnectionMode ||
                         pendingHelperConnectionStrategy != settings.helperConnectionStrategy ||
                         pendingWaitForWifi != settings.waitForWifiBeforeWifiDirect ||
@@ -2025,6 +2035,19 @@ class SettingsFragment : Fragment() {
             ))
         }
 
+        items.add(SettingItem.ToggleSettingEntry(
+            stableId = "showVehicleOsd",
+            nameResId = R.string.show_vehicle_osd,
+            descriptionResId = R.string.show_vehicle_osd_description,
+            isChecked = pendingShowVehicleOsd ?: settings.showVehicleOsd,
+            searchKeywords = "osd puertas climatizador aire acondicionado calefactor vidrios doors climate hvac overlay canbus topway",
+            onCheckedChanged = { isChecked ->
+                pendingShowVehicleOsd = isChecked
+                checkChanges()
+                updateSettingsList()
+            }
+        ))
+
         // --- Navigation Settings ---
                 items.add(SettingItem.SettingEntry(
             stableId = "oemAppManagement",
@@ -2061,6 +2084,19 @@ class SettingsFragment : Fragment() {
             isChecked = pendingShowNavigationNotifications ?: settings.showNavigationNotifications,
             onCheckedChanged = { isChecked ->
                 pendingShowNavigationNotifications = isChecked
+                checkChanges()
+                updateSettingsList()
+            }
+        ))
+
+        items.add(SettingItem.ToggleSettingEntry(
+            stableId = "sendVehicleTelemetry",
+            nameResId = R.string.send_vehicle_telemetry,
+            descriptionResId = R.string.send_vehicle_telemetry_description,
+            isChecked = pendingSendVehicleTelemetry ?: settings.sendVehicleTelemetry,
+            searchKeywords = "telemetria vehiculo canbus velocidad vss rpm freno mano parking brake gear combustible autonomia sensor",
+            onCheckedChanged = { isChecked ->
+                pendingSendVehicleTelemetry = isChecked
                 checkChanges()
                 updateSettingsList()
             }

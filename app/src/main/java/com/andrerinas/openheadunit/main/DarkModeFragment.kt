@@ -26,6 +26,7 @@ import com.andrerinas.openheadunit.main.settings.SettingsAdapter
 import com.andrerinas.openheadunit.utils.AppThemeManager
 import com.andrerinas.openheadunit.utils.Settings
 import com.andrerinas.openheadunit.utils.ToastUtils
+import com.andrerinas.openheadunit.utils.TopwayCarState
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -90,6 +91,15 @@ class DarkModeFragment : Fragment(), SensorEventListener {
         }
     }
 
+    private val topwayListener = object : TopwayCarState.Listener {
+        override fun onBrightnessChanged(brightness0To255: Int) {
+            if (brightness0To255 != cachedBrightness) {
+                cachedBrightness = brightness0To255
+                scheduleListRefresh()
+            }
+        }
+    }
+
     private val refreshHandler = Handler(Looper.getMainLooper())
     private val refreshRunnable = Runnable {
         if (isAdded && ::settingsAdapter.isInitialized) {
@@ -105,10 +115,24 @@ class DarkModeFragment : Fragment(), SensorEventListener {
         return inflater.inflate(R.layout.fragment_dark_mode, container, false)
     }
 
+    private var hasHardwareLightSensor: Boolean = true
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
         settings = App.provide(requireContext()).settings
+        val sm = requireContext().getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        hasHardwareLightSensor = sm?.getDefaultSensor(Sensor.TYPE_LIGHT) != null
+
+        if (!hasHardwareLightSensor) {
+            if (settings.appTheme == Settings.AppTheme.LIGHT_SENSOR) {
+                settings.appTheme = Settings.AppTheme.CAR_SIGNAL
+                AppThemeManager.reapply(requireContext(), settings)
+            }
+            if (settings.nightMode == Settings.NightMode.LIGHT_SENSOR) {
+                settings.nightMode = Settings.NightMode.CAR_SIGNAL
+            }
+        }
 
         // Initialize pending state from current values
         pendingAppTheme = settings.appTheme
@@ -585,10 +609,15 @@ class DarkModeFragment : Fragment(), SensorEventListener {
             nameResId = R.string.app_theme,
             value = appThemeTitles[pendingAppTheme!!.value],
             onClick = { _ ->
+                val availableAppThemes = Settings.AppTheme.values().filter {
+                    hasHardwareLightSensor || it != Settings.AppTheme.LIGHT_SENSOR
+                }
+                val filteredAppThemeTitles = availableAppThemes.map { appThemeTitles[it.value] }.toTypedArray()
+                val checkedIndex = availableAppThemes.indexOf(pendingAppTheme).coerceAtLeast(0)
                 MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
                     .setTitle(R.string.change_app_theme)
-                    .setSingleChoiceItems(appThemeTitles, pendingAppTheme!!.value) { dialog, which ->
-                        pendingAppTheme = Settings.AppTheme.fromInt(which)
+                    .setSingleChoiceItems(filteredAppThemeTitles, checkedIndex) { dialog, which ->
+                        pendingAppTheme = availableAppThemes.getOrElse(which) { Settings.AppTheme.AUTOMATIC }
                         if (pendingAppTheme != Settings.AppTheme.LOCATION) restoreAppTheme = pendingAppTheme!!
                         // Reset useExtremeDarkMode for static modes
                         if (pendingAppTheme == Settings.AppTheme.CLEAR ||
@@ -622,7 +651,8 @@ class DarkModeFragment : Fragment(), SensorEventListener {
         }
 
         // App theme sub-options: threshold slider for Light Sensor / Screen Brightness
-        if (pendingAppTheme == Settings.AppTheme.LIGHT_SENSOR || pendingAppTheme == Settings.AppTheme.SCREEN_BRIGHTNESS) {
+        if ((pendingAppTheme == Settings.AppTheme.LIGHT_SENSOR && hasHardwareLightSensor) ||
+            pendingAppTheme == Settings.AppTheme.SCREEN_BRIGHTNESS) {
             val isSensor = pendingAppTheme == Settings.AppTheme.LIGHT_SENSOR
             val currentValue = if (isSensor) pendingAppThemeThresholdLux else pendingAppThemeThresholdBrightness
             val title = getString(if (isSensor) R.string.threshold_light_title else R.string.threshold_brightness_title)
@@ -731,11 +761,16 @@ class DarkModeFragment : Fragment(), SensorEventListener {
             },
             onClick = { _ ->
                 val nightModeTitles = resources.getStringArray(R.array.night_mode)
+                val availableNightModes = Settings.NightMode.values().filter {
+                    hasHardwareLightSensor || it != Settings.NightMode.LIGHT_SENSOR
+                }
+                val filteredNightModeTitles = availableNightModes.map { nightModeTitles[it.value] }.toTypedArray()
+                val checkedIndex = availableNightModes.indexOf(pendingNightMode).coerceAtLeast(0)
 
                 MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
                     .setTitle(R.string.night_mode)
-                    .setSingleChoiceItems(nightModeTitles, pendingNightMode!!.value) { dialog, which ->
-                        pendingNightMode = Settings.NightMode.fromInt(which)!!
+                    .setSingleChoiceItems(filteredNightModeTitles, checkedIndex) { dialog, which ->
+                        pendingNightMode = availableNightModes.getOrElse(which) { Settings.NightMode.AUTO }
                         if (pendingNightMode != Settings.NightMode.LOCATION) restoreNightMode = pendingNightMode!!
                         checkChanges()
                         dialog.dismiss()
@@ -746,7 +781,8 @@ class DarkModeFragment : Fragment(), SensorEventListener {
         ))
 
         // Night mode sub-options: threshold slider for Light Sensor / Screen Brightness
-        if (pendingNightMode == Settings.NightMode.LIGHT_SENSOR || pendingNightMode == Settings.NightMode.SCREEN_BRIGHTNESS) {
+        if ((pendingNightMode == Settings.NightMode.LIGHT_SENSOR && hasHardwareLightSensor) ||
+            pendingNightMode == Settings.NightMode.SCREEN_BRIGHTNESS) {
             val isSensor = pendingNightMode == Settings.NightMode.LIGHT_SENSOR
             val currentValue = if (isSensor) pendingThresholdLux else pendingThresholdBrightness
             val title = getString(if (isSensor) R.string.threshold_light_title else R.string.threshold_brightness_title)
@@ -920,6 +956,7 @@ class DarkModeFragment : Fragment(), SensorEventListener {
         }
 
         // Observe screen brightness changes so the threshold dialog/list show a live value
+        TopwayCarState.registerListener(requireContext(), topwayListener)
         cachedBrightness = readBrightness()
         val cr = requireContext().contentResolver
         cr.registerContentObserver(
@@ -937,11 +974,14 @@ class DarkModeFragment : Fragment(), SensorEventListener {
     override fun onPause() {
         super.onPause()
         sensorManager?.unregisterListener(this)
+        TopwayCarState.unregisterListener(topwayListener)
         try { context?.contentResolver?.unregisterContentObserver(brightnessObserver) } catch (_: Exception) {}
         refreshHandler.removeCallbacks(refreshRunnable)
     }
 
     private fun readBrightness(): Int {
+        val topwayBrightness = TopwayCarState.brightness0To255
+        if (topwayBrightness >= 0) return topwayBrightness
         val ctx = context ?: return -1
         val cr = ctx.contentResolver
         if (Build.VERSION.SDK_INT >= 28) {

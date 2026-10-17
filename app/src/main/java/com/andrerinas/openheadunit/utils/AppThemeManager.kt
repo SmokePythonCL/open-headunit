@@ -62,6 +62,31 @@ class AppThemeManager(
         }
     }
 
+    private val topwaySettleRunnable = Runnable {
+        update(debounce = false)
+    }
+
+    private val topwayListener = object : TopwayCarState.Listener {
+        override fun onHeadlightChanged(isNight: Boolean) {
+            if (settings.appTheme == Settings.AppTheme.CAR_SIGNAL ||
+                (settings.appTheme == Settings.AppTheme.LIGHT_SENSOR && lightSensor == null)
+            ) {
+                handler.removeCallbacks(topwaySettleRunnable)
+                if (isNight && !nightModeCalculator.isSunriseSunsetNight && !TopwayCarState.isManualHeadlightOn) {
+                    handler.postDelayed(topwaySettleRunnable, 300L)
+                } else {
+                    update(debounce = false)
+                }
+            }
+        }
+
+        override fun onBrightnessChanged(brightness0To255: Int) {
+            if (settings.appTheme == Settings.AppTheme.SCREEN_BRIGHTNESS) {
+                update(debounce = false)
+            }
+        }
+    }
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == LocationUpdateIntent.action) {
@@ -104,6 +129,7 @@ class AppThemeManager(
             context.contentResolver.unregisterContentObserver(carSignalObserver)
             isCarSignalObserverRegistered = false
         }
+        TopwayCarState.unregisterListener(topwayListener)
         handler.removeCallbacks(debounceRunnable)
     }
 
@@ -157,6 +183,15 @@ class AppThemeManager(
                 isCarSignalObserverRegistered = false
             }
         }
+
+        if (theme == Settings.AppTheme.CAR_SIGNAL ||
+            theme == Settings.AppTheme.SCREEN_BRIGHTNESS ||
+            (theme == Settings.AppTheme.LIGHT_SENSOR && lightSensor == null)
+        ) {
+            TopwayCarState.registerListener(context, topwayListener)
+        } else {
+            TopwayCarState.unregisterListener(topwayListener)
+        }
     }
 
     /**
@@ -188,6 +223,17 @@ class AppThemeManager(
                         currentLux < threshold
                     }
                     AppLog.d("AppThemeManager: LIGHT_SENSOR lux=$currentLux threshold=$threshold isNight=$isNight")
+                } else if (lightSensor == null) {
+                    val isAstroNight = nightModeCalculator.isSunriseSunsetNight
+                    val topwayNight = TopwayCarState.resolveEffectiveCarSignalNight(isAstroNight)
+                    if (topwayNight != null) {
+                        isNight = topwayNight
+                        AppLog.d(
+                            "AppThemeManager: LIGHT_SENSOR (/dev/tw) effectiveNight=$isNight raw=${TopwayCarState.headlightNight} manual=${TopwayCarState.isManualHeadlightOn} astroNight=$isAstroNight"
+                        )
+                    } else {
+                        isNight = lastEmittedNight ?: false
+                    }
                 }
             }
             Settings.AppTheme.SCREEN_BRIGHTNESS -> {
@@ -204,15 +250,24 @@ class AppThemeManager(
                 }
             }
             Settings.AppTheme.CAR_SIGNAL -> {
-                val carMode = try {
-                    SystemSettings.System.getInt(context.contentResolver, "car_mode")
-                } catch (_: Exception) { -1 }
-                if (carMode >= 0) {
-                    isNight = carMode != 0
-                    AppLog.d("AppThemeManager: CAR_SIGNAL car_mode=$carMode isNight=$isNight")
+                val isAstroNight = nightModeCalculator.isSunriseSunsetNight
+                val topwayNight = TopwayCarState.resolveEffectiveCarSignalNight(isAstroNight)
+                if (topwayNight != null) {
+                    isNight = topwayNight
+                    AppLog.d(
+                        "AppThemeManager: CAR_SIGNAL Topway /dev/tw effectiveNight=$isNight raw=${TopwayCarState.headlightNight} manual=${TopwayCarState.isManualHeadlightOn} astroNight=$isAstroNight"
+                    )
                 } else {
-                    AppLog.w("AppThemeManager: CAR_SIGNAL key 'car_mode' not present; treating as day")
-                    isNight = lastEmittedNight ?: false
+                    val carMode = try {
+                        SystemSettings.System.getInt(context.contentResolver, "car_mode")
+                    } catch (_: Exception) { -1 }
+                    if (carMode >= 0) {
+                        isNight = carMode != 0
+                        AppLog.d("AppThemeManager: CAR_SIGNAL car_mode=$carMode isNight=$isNight")
+                    } else {
+                        AppLog.w("AppThemeManager: CAR_SIGNAL key 'car_mode' not present; treating as day")
+                        isNight = lastEmittedNight ?: false
+                    }
                 }
             }
             Settings.AppTheme.AUTO_SUNRISE -> {
@@ -278,6 +333,10 @@ class AppThemeManager(
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun readBrightness(): Int {
+        val topwayBrightness = TopwayCarState.brightness0To255
+        if (topwayBrightness >= 0) {
+            return topwayBrightness
+        }
         // On API 28+ (Android 9+) the brightness slider primarily writes to
         // `screen_brightness_float` (0.0..1.0). The legacy integer SCREEN_BRIGHTNESS
         // may be stale, missing (when slider hits 0), or driven by auto-brightness,

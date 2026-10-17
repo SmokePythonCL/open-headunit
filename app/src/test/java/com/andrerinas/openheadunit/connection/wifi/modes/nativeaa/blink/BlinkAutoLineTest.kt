@@ -109,4 +109,30 @@ class BlinkAutoLineTest {
         assertEquals(2, encoded.split("\r\n").count { it.isNotEmpty() })
         assertEquals(false, encoded.contains("AT#ZA\r\n"))
     }
+
+    @Test
+    fun `Topway gocsdk lines on rf_serial are recognised and encoded behind AT#SG`() {
+        // Exact lines captured from /dev/rf_serial (/dev/pts/1) on Topway Allwinner T3L (BLINK_5876_V1.0).
+        assertTrue(BlinkAutoLine.parse("SV") is BlinkAutoLine.Event.ChannelOpened)
+        assertEquals(
+            BlinkAutoLine.Event.ModuleAddress("00:58:76:C5:18:91"),
+            BlinkAutoLine.parse("DB005876C51891")
+        )
+        assertEquals(
+            BlinkAutoLine.Event.PhoneLinked("B0:C2:C7:6D:30:31"),
+            BlinkAutoLine.parse("JHB0C2C76D3031")
+        )
+        val frameEvent = BlinkAutoLine.parse("SI000B000718FCFFFFFFFFFFFFFFFF01") as BlinkAutoLine.Event.Frame
+        assertEquals(11, WppFraming.decodePayloadSize(frameEvent.bytes))
+        assertEquals(WppMessageType.START_RESPONSE, WppFraming.decodeType(frameEvent.bytes))
+
+        val versionRequest = BlinkAutoLine.decodeHex("0804100318012000")!!
+        assertEquals(
+            "AT#SG000800040804100318012000\r\n",
+            BlinkAutoLine.encode(
+                WppFraming.encodeFrame(versionRequest, WppMessageType.VERSION_REQUEST),
+                BlinkAutoLine.TX_COMMAND_GOC,
+            )
+        )
+    }
 }

@@ -7,6 +7,7 @@ import com.andrerinas.openheadunit.aap.AapSslContext
 import com.andrerinas.openheadunit.aap.AapTransport
 import com.andrerinas.openheadunit.aap.NarrowBandProfilePolicy
 import com.andrerinas.openheadunit.input.MediaKeyRoutingPolicy
+import com.andrerinas.openheadunit.input.TopwayKey
 import com.andrerinas.openheadunit.decoder.audio.PlaybackFocusPolicy
 import com.andrerinas.openheadunit.utils.AppLog
 import com.andrerinas.openheadunit.utils.BluetoothHelper
@@ -1176,8 +1177,10 @@ class CommManager(
 
         // 1. Remapping (Physical -> Logical)
         // Check if the physical keyCode is mapped to a logical action in settings.
-        // If not mapped, we use the original keyCode as the logical code.
-        var logicalCode = settings.keyCodes.entries.find { it.value == keyCode }?.key ?: keyCode
+        // If not mapped, check Topway default logical key codes, otherwise use original keyCode.
+        var logicalCode = settings.keyCodes.entries.find { it.value == keyCode }?.key
+            ?: TopwayKey.defaultLogicalKeyCode(keyCode)
+            ?: keyCode
 
         // 2. Proprietary Key Filtering
         // If the key is proprietary (internal ID > 1000) and NOT mapped, we drop it.

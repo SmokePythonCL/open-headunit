@@ -7,6 +7,7 @@ import com.andrerinas.openheadunit.App
 import com.andrerinas.openheadunit.connection.CommManager
 import com.andrerinas.openheadunit.connection.carkey.byd.CarBydReceiver
 import com.andrerinas.openheadunit.connection.carkey.fyt.CarFYTReceiver
+import com.andrerinas.openheadunit.connection.carkey.topway.CarTopwayReceiver
 import com.andrerinas.openheadunit.contract.KeyIntent
 import com.andrerinas.openheadunit.utils.AppLog
 
@@ -19,6 +20,7 @@ interface CarKeyReceiver {
                 CarKeyBroadcastReceiver(),
                 CarBydReceiver(),
                 CarFYTReceiver(),
+                CarTopwayReceiver(),
             )
         }
     }

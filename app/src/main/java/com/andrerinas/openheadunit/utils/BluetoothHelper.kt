@@ -500,20 +500,26 @@ object BluetoothHelper {
         get() = externalBtLatch.evidence()
 
     /**
-     * Evidence that this is an FYT unit with an external module on `/dev/auto_serial`, or null.
+     * Evidence that this is an FYT unit with an external module on `/dev/auto_serial`, or a Topway
+     * unit with an external `gocsdk` BLINK module on `/dev/rf_serial`, or null.
      * See [ExternalBtPolicy.detectFytModule]. Latched the same way: the node can appear late.
      */
     private val fytModuleLatch = ExternalBtPolicy.Latch {
+        val nodeExists: (String) -> Boolean = { path ->
+            // SELinux can hide the pts behind the link, so a listing of /dev is the fallback.
+            try {
+                java.io.File(path).exists() ||
+                    java.io.File(path).parentFile?.list()?.contains(java.io.File(path).name) == true
+            } catch (e: Exception) { false }
+        }
         ExternalBtPolicy.detectFytModule(
-            nodeExists = { path ->
-                // SELinux can hide the pts behind the link, so a listing of /dev is the fallback.
-                try {
-                    java.io.File(path).exists() ||
-                        java.io.File(path).parentFile?.list()?.contains(java.io.File(path).name) == true
-                } catch (e: Exception) { false }
-            },
+            nodeExists = nodeExists,
             property = { key -> SystemProperties.get(key, "") }
-        )
+        ) ?: if (nodeExists("/dev/tw") && nodeExists("/dev/rf_serial")) {
+            "/dev/rf_serial exists"
+        } else {
+            null
+        }
     }
 
     val fytModuleEvidence: String?

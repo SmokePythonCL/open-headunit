@@ -4,8 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import com.andrerinas.openheadunit.aap.protocol.Channel
+import com.andrerinas.openheadunit.aap.protocol.messages.CarSpeedEvent
 import com.andrerinas.openheadunit.aap.protocol.messages.DrivingStatusEvent
+import com.andrerinas.openheadunit.aap.protocol.messages.FuelLevelEvent
+import com.andrerinas.openheadunit.aap.protocol.messages.GearEvent
 import com.andrerinas.openheadunit.aap.protocol.messages.LocationUpdateEvent
+import com.andrerinas.openheadunit.aap.protocol.messages.ParkingBrakeEvent
+import com.andrerinas.openheadunit.aap.protocol.messages.RpmEvent
 import com.andrerinas.openheadunit.aap.protocol.messages.ServiceDiscoveryResponse
 import com.andrerinas.openheadunit.aap.protocol.proto.Common
 import com.andrerinas.openheadunit.aap.protocol.proto.Control
@@ -20,6 +25,7 @@ import com.andrerinas.openheadunit.App
 import com.andrerinas.openheadunit.utils.AppLog
 import com.andrerinas.openheadunit.utils.HeadUnitScreenConfig
 import com.andrerinas.openheadunit.utils.Settings
+import com.andrerinas.openheadunit.utils.TopwayCarState
 import com.andrerinas.openheadunit.utils.VideoFallbackPolicy
 import com.andrerinas.openheadunit.utils.Utils
 
@@ -296,6 +302,37 @@ internal class AapControlSensor(
             } else {
                 AppLog.i("LOCATION sensor requested. No recent GPS fix to prime with.")
             }
+        }
+
+        if (settings.sendVehicleTelemetry && TopwayCarState.isSupported) {
+            val telemetry = TopwayCarState.telemetryState
+            when (request.type) {
+                Sensors.SensorType.CAR_SPEED -> {
+                    val speedE3 = if (settings.fakeSpeed) 500 else (telemetry.speedMetersPerSecE3 ?: 0)
+                    aapTransport.send(CarSpeedEvent(speedE3))
+                }
+                Sensors.SensorType.RPM -> {
+                    telemetry.rpm?.let { aapTransport.send(RpmEvent(it)) }
+                }
+                Sensors.SensorType.PARKING_BRAKE -> {
+                    val engaged = if (settings.fakeSpeed) true else (telemetry.handbrakeEngaged ?: true)
+                    aapTransport.send(ParkingBrakeEvent(engaged))
+                }
+                Sensors.SensorType.GEAR -> {
+                    aapTransport.send(
+                        GearEvent.fromReverseAndHandbrake(
+                            reverseGear = telemetry.reverseGear ?: false,
+                            handbrakeEngaged = telemetry.handbrakeEngaged,
+                        )
+                    )
+                }
+                Sensors.SensorType.FUEL_LEVEL -> {
+                    telemetry.rangeKm?.let { aapTransport.send(FuelLevelEvent(it)) }
+                }
+                else -> {}
+            }
+        } else if (request.type == Sensors.SensorType.CAR_SPEED && settings.fakeSpeed) {
+            aapTransport.send(CarSpeedEvent(500))
         }
         return 0
     }

@@ -37,6 +37,8 @@ class BlinkAaCarrier(
     private val onPhoneEvidence: () -> Unit,
     /** Called with the reason whenever it changes, and with null once the port is open again. */
     private val onRefusalChanged: (BlinkRefusal?) -> Unit = {},
+    /** Called when the daemon reports its own Bluetooth module MAC address (`DB<12 hex>`). */
+    private val onModuleAddress: (String) -> Unit = {},
     /** Whether the stock client is out of the way, read without root before every pass. */
     private val stockClient: () -> StockCarLink.State = { StockCarLink.State.UNKNOWN },
     private val openDirect: (onLine: (String) -> Unit, onEnded: (String) -> Unit) -> BlinkAutoSerialChannel =
@@ -143,7 +145,8 @@ class BlinkAaCarrier(
             return null
         }
         // Anything the package manager cannot vouch for goes to the bridge, whose guard asks with root.
-        if (stock.allowsDirectOpen) {
+        // On Topway units with /dev/rf_serial (gocsdk), com.syu.carlink is absent and /dev/rf_serial is 0666.
+        if (stock.allowsDirectOpen || BlinkAutoSerialChannel.isTopwayGocPortPresent()) {
             try {
                 openDirectly(onEnded)?.let { return it }
             } catch (_: DirectChannelStuck) {
@@ -186,7 +189,7 @@ class BlinkAaCarrier(
             waited += POLL_MS
         }
         if (direct.portOpened && !direct.isFinished) {
-            AppLog.i("NativeAA: [BLINK] opened ${BlinkAutoSerialChannel.PORT} without root.")
+            AppLog.i("NativeAA: [BLINK] opened ${direct.portName} without root.")
             directFailure = null
             return direct
         }
@@ -226,7 +229,8 @@ class BlinkAaCarrier(
     }
 
     private fun markOpen() {
-        AppLog.i("NativeAA: [BLINK] listening on ${BlinkAutoSerialChannel.PORT} for the phone's Android Auto channel.")
+        val portLabel = channel?.portName ?: BlinkAutoSerialChannel.PORT
+        AppLog.i("NativeAA: [BLINK] listening on $portLabel for the phone's Android Auto channel.")
         consecutiveRefusals = 0
         if (refusal != null) {
             refusal = null
@@ -261,6 +265,22 @@ class BlinkAaCarrier(
             is BlinkAutoLine.Event.PhoneLinked -> {
                 phoneAddress = event.address
                 AppLog.i("NativeAA: [BLINK] hands-free link up to ${event.address}.")
+                val openChan = channel
+                if (openChan != null &&
+                    openChan.portName == BlinkAutoSerialChannel.GOC_PORT &&
+                    current == null &&
+                    channelOpenedAt.get() == 0L &&
+                    !isFinishedForSession()
+                ) {
+                    BlinkAutoSerialChannel.gocConnectSppCommand(event.address)?.let { cmd ->
+                        AppLog.i("NativeAA: [BLINK] arming Android Auto SPP to ${event.address} on ${openChan.portName}")
+                        openChan.sendRawCommand(cmd)
+                    }
+                }
+            }
+            is BlinkAutoLine.Event.ModuleAddress -> {
+                AppLog.i("NativeAA: [BLINK] external Bluetooth module address is ${event.address}.")
+                onModuleAddress(event.address)
             }
             BlinkAutoLine.Event.ChannelOpened -> {
                 AppLog.i("NativeAA: [BLINK] the phone opened the Android Auto channel.")
@@ -295,10 +315,17 @@ class BlinkAaCarrier(
 
     /**
      * `blink` arms the Android Auto service itself once the phone's hands-free link is up, so
-     * nothing is sent. Called on every credential delivery and resume, so the hint is logged once
-     * per arming.
+     * nothing is sent on FYT. On Topway `gocsdk` (`/dev/rf_serial`), `AT#VE`, `AT#QI`, and `AT#SP`
+     * query the connected HFP phone and arm/open the Android Auto SPP channel (`SV`).
      */
     override fun requestWake(userAsked: Boolean) {
+        val openChan = channel
+        if (openChan != null && openChan.portName == BlinkAutoSerialChannel.GOC_PORT) {
+            val sppCmd = phoneAddress?.let { BlinkAutoSerialChannel.gocConnectSppCommand(it) }.orEmpty()
+            AppLog.i("NativeAA: [BLINK] sending AT#VE + AT#QI + AT#SP on ${openChan.portName} to wake Android Auto SPP")
+            openChan.sendRawCommand(BlinkAutoSerialChannel.GOC_INIT_COMMANDS + sppCmd)
+            return
+        }
         if (wakeHintLogged) return
         wakeHintLogged = true
         AppLog.i(

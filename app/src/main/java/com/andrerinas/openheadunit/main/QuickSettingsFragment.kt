@@ -392,11 +392,18 @@ class QuickSettingsFragment : DialogFragment() {
     }
 
     private fun showNightModeDialog() {
+        val sm = requireContext().getSystemService(android.content.Context.SENSOR_SERVICE) as? android.hardware.SensorManager
+        val hasLightSensor = sm?.getDefaultSensor(android.hardware.Sensor.TYPE_LIGHT) != null
         val nightModeTitles = resources.getStringArray(R.array.night_mode)
+        val availableNightModes = Settings.NightMode.values().filter {
+            hasLightSensor || it != Settings.NightMode.LIGHT_SENSOR
+        }
+        val filteredTitles = availableNightModes.map { nightModeTitles[it.value] }.toTypedArray()
+        val checkedIndex = availableNightModes.indexOf(settings.nightMode).coerceAtLeast(0)
         MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
             .setTitle(R.string.night_mode)
-            .setSingleChoiceItems(nightModeTitles, settings.nightMode.value) { dialog, which ->
-                val newMode = Settings.NightMode.fromInt(which) ?: Settings.NightMode.AUTO
+            .setSingleChoiceItems(filteredTitles, checkedIndex) { dialog, which ->
+                val newMode = availableNightModes.getOrElse(which) { Settings.NightMode.AUTO }
                 settings.nightMode = newMode
                 settings.commit()
                 notifyChange(sensorRefresh = true)

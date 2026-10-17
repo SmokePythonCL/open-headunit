@@ -79,6 +79,33 @@ class NightModeManager(
         override fun onLowMemory() {}
     }
 
+    private val topwaySettleRunnable = Runnable {
+        update(debounce = false)
+    }
+
+    private val topwayListener = object : TopwayCarState.Listener {
+        override fun onHeadlightChanged(isNight: Boolean) {
+            if (settings.nightMode == Settings.NightMode.CAR_SIGNAL ||
+                (settings.nightMode == Settings.NightMode.LIGHT_SENSOR && lightSensor == null)
+            ) {
+                handler.removeCallbacks(topwaySettleRunnable)
+                if (isNight && !nightModeCalculator.isSunriseSunsetNight && !TopwayCarState.isManualHeadlightOn) {
+                    // Wait 300ms during daytime so CANbus 0x7D sub 0x02 ("posición" 0x80 step)
+                    // can arrive if the stalk is being rotated manually (Auto -> Off -> posición -> bajas).
+                    handler.postDelayed(topwaySettleRunnable, 300L)
+                } else {
+                    update(debounce = false)
+                }
+            }
+        }
+
+        override fun onBrightnessChanged(brightness0To255: Int) {
+            if (settings.nightMode == Settings.NightMode.SCREEN_BRIGHTNESS) {
+                update(debounce = false)
+            }
+        }
+    }
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == LocationUpdateIntent.action) {
@@ -128,6 +155,7 @@ class NightModeManager(
             context.unregisterComponentCallbacks(systemThemeCallbacks)
             isSystemCallbacksRegistered = false
         }
+        TopwayCarState.unregisterListener(topwayListener)
         handler.removeCallbacks(debounceRunnable)
     }
 
@@ -209,6 +237,15 @@ class NightModeManager(
                 isSystemCallbacksRegistered = false
             }
         }
+
+        if (settings.nightMode == Settings.NightMode.CAR_SIGNAL ||
+            settings.nightMode == Settings.NightMode.SCREEN_BRIGHTNESS ||
+            (settings.nightMode == Settings.NightMode.LIGHT_SENSOR && lightSensor == null)
+        ) {
+            TopwayCarState.registerListener(context, topwayListener)
+        } else {
+            TopwayCarState.unregisterListener(topwayListener)
+        }
     }
 
     // Made public so Service can force an update
@@ -235,6 +272,17 @@ class NightModeManager(
                     } else {
                         currentLux < threshold
                     }
+                } else if (lightSensor == null) {
+                    val isAstroNight = nightModeCalculator.isSunriseSunsetNight
+                    val topwayNight = TopwayCarState.resolveEffectiveCarSignalNight(isAstroNight)
+                    if (topwayNight != null) {
+                        isNight = topwayNight
+                        AppLog.d(
+                            "NightModeManager: LIGHT_SENSOR (/dev/tw) effectiveNight=$isNight raw=${TopwayCarState.headlightNight} manual=${TopwayCarState.isManualHeadlightOn} astroNight=$isAstroNight"
+                        )
+                    } else {
+                        isNight = lastEmittedValue ?: false
+                    }
                 }
             }
             Settings.NightMode.SCREEN_BRIGHTNESS -> {
@@ -255,17 +303,26 @@ class NightModeManager(
                 }
             }
             Settings.NightMode.CAR_SIGNAL -> {
-                // Many Chinese aftermarket head units (e.g. OLEDPRO) expose the car's
-                // ILL+ headlight signal as Settings.System.car_mode (0 = day, 1 = night).
-                val carMode = try {
-                    SystemSettings.System.getInt(context.contentResolver, "car_mode")
-                } catch (_: Exception) { -1 }
-                if (carMode >= 0) {
-                    isNight = carMode != 0
-                    AppLog.d("NightModeManager: CAR_SIGNAL car_mode=$carMode isNight=$isNight")
+                val isAstroNight = nightModeCalculator.isSunriseSunsetNight
+                val topwayNight = TopwayCarState.resolveEffectiveCarSignalNight(isAstroNight)
+                if (topwayNight != null) {
+                    isNight = topwayNight
+                    AppLog.d(
+                        "NightModeManager: CAR_SIGNAL Topway /dev/tw effectiveNight=$isNight raw=${TopwayCarState.headlightNight} manual=${TopwayCarState.isManualHeadlightOn} astroNight=$isAstroNight"
+                    )
                 } else {
-                    AppLog.w("NightModeManager: CAR_SIGNAL key 'car_mode' not present; keeping previous state")
-                    isNight = lastEmittedValue ?: false
+                    // Many Chinese aftermarket head units (e.g. OLEDPRO) expose the car's
+                    // ILL+ headlight signal as Settings.System.car_mode (0 = day, 1 = night).
+                    val carMode = try {
+                        SystemSettings.System.getInt(context.contentResolver, "car_mode")
+                    } catch (_: Exception) { -1 }
+                    if (carMode >= 0) {
+                        isNight = carMode != 0
+                        AppLog.d("NightModeManager: CAR_SIGNAL car_mode=$carMode isNight=$isNight")
+                    } else {
+                        AppLog.w("NightModeManager: CAR_SIGNAL key 'car_mode' not present; keeping previous state")
+                        isNight = lastEmittedValue ?: false
+                    }
                 }
             }
             Settings.NightMode.SYSTEM -> {
@@ -321,6 +378,10 @@ class NightModeManager(
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun readBrightness(): Int {
+        val topwayBrightness = TopwayCarState.brightness0To255
+        if (topwayBrightness >= 0) {
+            return topwayBrightness
+        }
         // On API 28+ (Android 9+) the brightness slider primarily writes to
         // `screen_brightness_float` (0.0..1.0). The legacy integer SCREEN_BRIGHTNESS
         // may be stale, missing (when slider hits 0), or driven by auto-brightness,

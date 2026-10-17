@@ -27,6 +27,9 @@ object BlinkAutoLine {
         /** A phone's hands-free link is up. [address] is canonical `AA:BB:CC:DD:EE:FF`. */
         data class PhoneLinked(val address: String) : Event()
 
+        /** The head unit's own external Bluetooth module MAC address (`DB<12 hex>`). */
+        data class ModuleAddress(val address: String) : Event()
+
         /** The phone opened the Android Auto channel on the module. */
         object ChannelOpened : Event()
 
@@ -40,6 +43,12 @@ object BlinkAutoLine {
         data class Other(val line: String) : Event()
     }
 
+    /** Outgoing frame prefix for FYT `blink` (`/dev/auto_serial`). */
+    const val TX_COMMAND_FYT = "AT#ZA"
+
+    /** Outgoing frame prefix for Topway `gocsdk` / `blink` (`/dev/rf_serial`). */
+    const val TX_COMMAND_GOC = "AT#SG"
+
     /** One line from the daemon, CR/LF already stripped or not. */
     fun parse(raw: String): Event {
         // DUDUOS ships /dev/auto_serial with IUCLC enabled, so the tty line discipline turns the
@@ -47,13 +56,17 @@ object BlinkAutoLine {
         // parser tolerant even though the channel also tries to clear that flag.
         val original = raw.trim()
         val line = original.uppercase()
-        if (line == "AA") return Event.ChannelOpened
+        if (line == "AA" || line == "SV") return Event.ChannelOpened
         if (line == "SS") return Event.ChannelClosed
         if (line.startsWith("JH") && line.length == 14) {
             val hex = line.substring(2)
             if (isHex(hex)) return Event.PhoneLinked(hex.chunked(2).joinToString(":").uppercase())
         }
-        if (line.startsWith("ZB")) {
+        if (line.startsWith("DB") && line.length == 14) {
+            val hex = line.substring(2)
+            if (isHex(hex)) return Event.ModuleAddress(hex.chunked(2).joinToString(":").uppercase())
+        }
+        if (line.startsWith("ZB") || line.startsWith("SI")) {
             // Any valid hex, even shorter than a WPP header: the handshake reads a byte stream, so
             // a frame split across two records must not lose its tail. Only idleReply needs whole
             // frames, and it checks for itself.
@@ -67,13 +80,13 @@ object BlinkAutoLine {
      * The lines that send [frame] (header included) to the phone.
      *
      * The stock client never sends a frame in one line: it splits the hex into
-     * [MAX_HEX_PER_LINE]-character `AT#ZA` lines. RFCOMM is a byte stream, so the split is invisible
-     * to the phone, and matching it keeps longer lines away from module firmware that may not take
-     * them. Unlike the stock client, a hex length that is an exact multiple of the chunk size does
-     * not produce a trailing empty `AT#ZA`.
+     * [MAX_HEX_PER_LINE]-character `AT#ZA` (or `AT#SG` on Topway `gocsdk`) lines. RFCOMM is a byte
+     * stream, so the split is invisible to the phone, and matching it keeps longer lines away from
+     * module firmware that may not take them. Unlike the stock client, a hex length that is an
+     * exact multiple of the chunk size does not produce a trailing empty `AT#ZA`.
      */
-    fun encode(frame: ByteArray): String =
-        toHex(frame).chunked(MAX_HEX_PER_LINE).joinToString("") { "AT#ZA$it\r\n" }
+    fun encode(frame: ByteArray, txCommand: String = TX_COMMAND_FYT): String =
+        toHex(frame).chunked(MAX_HEX_PER_LINE).joinToString("") { "$txCommand$it\r\n" }
 
     /** 50 bytes per line, as the stock client sends. */
     const val MAX_HEX_PER_LINE = 100

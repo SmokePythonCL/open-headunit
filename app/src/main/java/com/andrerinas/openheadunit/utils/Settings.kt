@@ -76,10 +76,28 @@ class Settings(private val context: Context) {
         get() = prefs.getString("bt-announce", null)
         set(value) = prefs.edit().putString("bt-announce", value).apply()
 
+    private fun defaultLatitudeForTimezone(): Double {
+        val tzId = java.util.TimeZone.getDefault().id ?: ""
+        return when {
+            tzId.contains("Santiago", ignoreCase = true) || tzId.contains("Punta_Arenas", ignoreCase = true) -> -33.4489
+            tzId.startsWith("America/Argentina") || tzId.contains("Montevideo") || tzId.contains("Sao_Paulo") -> -34.6037
+            else -> 32.0864169
+        }
+    }
+
+    private fun defaultLongitudeForTimezone(): Double {
+        val tz = java.util.TimeZone.getDefault()
+        val tzId = tz.id ?: ""
+        return when {
+            tzId.contains("Santiago", ignoreCase = true) || tzId.contains("Punta_Arenas", ignoreCase = true) -> -70.6693
+            else -> (tz.rawOffset / 3_600_000.0 * 15.0).coerceIn(-180.0, 180.0)
+        }
+    }
+
     var lastKnownLocation: Location
         get() {
-            val latitudeBits = prefs.getLong("last-loc-latitude", (32.0864169).toRawBits())
-            val longitudeBits = prefs.getLong("last-loc-longitude", (34.7557871).toRawBits())
+            val latitudeBits = prefs.getLong("last-loc-latitude", defaultLatitudeForTimezone().toRawBits())
+            val longitudeBits = prefs.getLong("last-loc-longitude", defaultLongitudeForTimezone().toRawBits())
 
             val location = Location("")
             location.latitude = java.lang.Double.longBitsToDouble(latitudeBits)
@@ -1689,7 +1707,7 @@ class Settings(private val context: Context) {
 
     var fixedSunriseLatitude: Double
         get() = java.lang.Double.longBitsToDouble(
-            prefs.getLong("fixed-sun-latitude", (32.0864169).toRawBits())
+            prefs.getLong("fixed-sun-latitude", defaultLatitudeForTimezone().toRawBits())
         )
         set(value) {
             prefs.edit().putLong("fixed-sun-latitude", value.toRawBits()).apply()
@@ -1697,7 +1715,7 @@ class Settings(private val context: Context) {
 
     var fixedSunriseLongitude: Double
         get() = java.lang.Double.longBitsToDouble(
-            prefs.getLong("fixed-sun-longitude", (34.7557871).toRawBits())
+            prefs.getLong("fixed-sun-longitude", defaultLongitudeForTimezone().toRawBits())
         )
         set(value) {
             prefs.edit().putLong("fixed-sun-longitude", value.toRawBits()).apply()
@@ -2268,7 +2286,12 @@ class Settings(private val context: Context) {
         set(value) { prefs.edit().putBoolean("kill-on-disconnect", value).apply() }
 
     var autoEnableHotspot: Boolean
-        get() = prefs.getBoolean("auto-enable-hotspot", false)
+        get() {
+            if (prefs.contains("auto-enable-hotspot")) {
+                return prefs.getBoolean("auto-enable-hotspot", false)
+            }
+            return runCatching { java.io.File("/dev/tw").exists() }.getOrDefault(false)
+        }
         set(value) { prefs.edit().putBoolean("auto-enable-hotspot", value).apply() }
 
     var waitForWifiBeforeWifiDirect: Boolean
@@ -2298,7 +2321,16 @@ class Settings(private val context: Context) {
     // means something different in every one of its five values. A wireless mode that reuses
     // another mode's selector is how the two call sites of the old usesWifiDirect() drifted apart.
     var nativeApStrategy: NativeStrategy
-        get() = NativeStrategy.byIdOrDefault(prefs.getInt("native-ap-transport", -1))
+        get() {
+            val isTopwayWithoutP2p = runCatching {
+                java.io.File("/dev/tw").exists() &&
+                    !context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_WIFI_DIRECT)
+            }.getOrDefault(false)
+            if (isTopwayWithoutP2p) return NativeStrategy.HOTSPOT
+            val saved = prefs.getInt("native-ap-transport", -1)
+            if (saved != -1) return NativeStrategy.byIdOrDefault(saved)
+            return NativeStrategy.DEFAULT
+        }
         set(value) = prefs.edit().putInt("native-ap-transport", value.id).apply()
 
     var nativeDriverSelectionMode: NativeDriverSelectionPolicy.Mode
@@ -2537,9 +2569,27 @@ class Settings(private val context: Context) {
         set(value) = prefs.edit().putBoolean("external-bt-zbt-transport", value).apply()
 
     // Carry the Native AA handshake over FYT's BLINK module, through the `blink` daemon's
-    // /dev/auto_serial relay (needs root). Off by default; only offered where that node exists.
+    // /dev/auto_serial relay (needs root), or Topway's `gocsdk` BLINK daemon on /dev/rf_serial.
+    // Note: `init.svc.gocsdk` is stored in /dev/__properties__/ with mode 0600 (root only) on
+    // Android 10, so untrusted_app cannot read it via SystemProperties; check /dev/rf_serial instead.
     var externalBtBlinkTransport: Boolean
-        get() = prefs.getBoolean("external-bt-blink-transport", false)
-        set(value) = prefs.edit().putBoolean("external-bt-blink-transport", value).apply()
+        get() {
+            if (prefs.contains("external-bt-blink-transport-v2")) {
+                return prefs.getBoolean("external-bt-blink-transport-v2", false)
+            }
+            return com.andrerinas.openheadunit.connection.wifi.modes.nativeaa.blink.BlinkAutoSerialChannel.isTopwayGocPortPresent()
+        }
+        set(value) = prefs.edit().putBoolean("external-bt-blink-transport-v2", value).apply()
+
+    // Send real vehicle CANbus telemetry (speed, RPM, parking brake, gear, fuel range) to Android Auto
+    var sendVehicleTelemetry: Boolean
+        get() = prefs.getBoolean("send-vehicle-telemetry", true)
+        set(value) = prefs.edit().putBoolean("send-vehicle-telemetry", value).apply()
+
+    // Display floating OSD over Android Auto for open doors and climate control / glass heater changes
+    var showVehicleOsd: Boolean
+        get() = prefs.getBoolean("show-vehicle-osd", true)
+        set(value) = prefs.edit().putBoolean("show-vehicle-osd", value).apply()
 
 }
+

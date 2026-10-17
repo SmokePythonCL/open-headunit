@@ -28,12 +28,35 @@ class BlinkAutoSerialChannel internal constructor(
     private val onLine: (String) -> Unit,
     private val onEnded: (String) -> Unit,
     private val cleanupScheduler: ((() -> Unit) -> Unit) = ::launchBridgeCleanup,
+    internal val txCommand: String = BlinkAutoLine.TX_COMMAND_FYT,
+    internal val portName: String = PORT,
 ) {
     companion object {
         const val PORT = "/dev/auto_serial"
+        const val GOC_PORT = "/dev/rf_serial"
+        internal const val GOC_AA_UUID_HEX = "4DE17A0052CB11E6BDF40800200C9A66"
+        internal const val GOC_INIT_COMMANDS = "AT#VE\r\nAT#QI\r\nAT#SP\r\n"
 
         private const val PID_TAG = "BLINKBRIDGE_PID "
         private const val ERR_TAG = "BLINKBRIDGE_ERR "
+
+        /** True when Topway's `gocsdk` serial relay (`/dev/rf_serial`) is present instead of FYT's `/dev/auto_serial`. */
+        fun isTopwayGocPortPresent(): Boolean =
+            runCatching {
+                val portFile = java.io.File(PORT)
+                val gocFile = java.io.File(GOC_PORT)
+                val devEntries = gocFile.parentFile?.list()
+                val hasAutoSerial = portFile.exists() || devEntries?.contains(portFile.name) == true
+                val hasGocSerial = gocFile.exists() || devEntries?.contains(gocFile.name) == true
+                !hasAutoSerial && hasGocSerial
+            }.getOrDefault(false)
+
+        /** Formats `AT#SP<12-hex-mac><32-hex-uuid>\r\n` so `gocsdk` arms or opens the Android Auto SPP channel. */
+        internal fun gocConnectSppCommand(address: String): String? {
+            val clean = address.replace(":", "").trim().uppercase()
+            if (clean.length != 12 || !clean.all { it in '0'..'9' || it in 'A'..'F' }) return null
+            return "AT#SP$clean$GOC_AA_UUID_HEX\r\n"
+        }
 
         // Toybox's `stty raw` on this FYT build leaves IUCLC, ICRNL, IXON/IXOFF, and OPOST on.
         // The captured result was lowercase `aa`/`jh...`, extra newlines, and would also transform
@@ -118,11 +141,39 @@ class BlinkAutoSerialChannel internal constructor(
 
         /**
          * Starts the same copy loop as this app, with no root, the way the stock client opens the
-         * node. Only the caller can check the stock client here, so it must have. A node this app
-         * cannot open or set the mode of ends the channel before [portOpened], and the caller falls
-         * back to [open]. Throws if `sh` cannot be run at all.
+         * node. Where `/dev/rf_serial` (Topway `gocsdk`) or `/dev/auto_serial` can be opened
+         * directly via JNI `termios` (bypassing `/system/bin/stty`, which is absent on Android 8.1
+         * Toybox), uses [BlinkTtyNative.openProcess] first.
          */
         fun openDirect(onLine: (String) -> Unit, onEnded: (String) -> Unit): BlinkAutoSerialChannel {
+            if (isTopwayGocPortPresent()) {
+                BlinkTtyNative.openProcess(
+                    port = GOC_PORT,
+                    pidLine = "${PID_TAG}0\n",
+                    initialWrite = GOC_INIT_COMMANDS,
+                )?.let { nativeProc ->
+                    return BlinkAutoSerialChannel(
+                        process = nativeProc,
+                        onLine = onLine,
+                        onEnded = onEnded,
+                        txCommand = BlinkAutoLine.TX_COMMAND_GOC,
+                        portName = GOC_PORT,
+                    ).also { it.start() }
+                }
+            } else {
+                BlinkTtyNative.openProcess(
+                    port = PORT,
+                    pidLine = "${PID_TAG}0\n",
+                )?.let { nativeProc ->
+                    return BlinkAutoSerialChannel(
+                        process = nativeProc,
+                        onLine = onLine,
+                        onEnded = onEnded,
+                        txCommand = BlinkAutoLine.TX_COMMAND_FYT,
+                        portName = PORT,
+                    ).also { it.start() }
+                }
+            }
             val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", BRIDGE_BODY))
             return BlinkAutoSerialChannel(process, onLine, onEnded).also { it.start() }
         }
@@ -175,7 +226,7 @@ class BlinkAutoSerialChannel internal constructor(
                         readerPid = line.removePrefix(PID_TAG).trim()
                         scriptSpoke = true
                         portOpened = true
-                        AppLog.i("NativeAA: [BLINK] bridge up on $PORT (reader pid $readerPid)")
+                        AppLog.i("NativeAA: [BLINK] bridge up on $portName (reader pid $readerPid)")
                     }
                     // Not logged here: a refused bridge repeats on every retry, and the carrier logs
                     // each distinct refusal once.
@@ -206,13 +257,25 @@ class BlinkAutoSerialChannel internal constructor(
     /** Sends one complete WPP frame to the phone. */
     @Throws(IOException::class)
     fun sendFrame(frame: ByteArray) {
-        if (isFinished) throw IOException("the $PORT bridge is closed")
-        val line = BlinkAutoLine.encode(frame)
+        if (isFinished) throw IOException("the $portName bridge is closed")
+        val line = BlinkAutoLine.encode(frame, txCommand)
         synchronized(writeLock) {
             sink.write(line.toByteArray(Charsets.US_ASCII))
             sink.flush()
         }
         AppLog.d("NativeAA: [BLINK] [TX] ${line.trimEnd()}")
+    }
+
+    /** Sends a raw AT command line (such as `AT#QI\r\n`) to the daemon. */
+    fun sendRawCommand(command: String) {
+        if (isFinished) return
+        runCatching {
+            synchronized(writeLock) {
+                sink.write(command.toByteArray(Charsets.US_ASCII))
+                sink.flush()
+            }
+            AppLog.d("NativeAA: [BLINK] [TX-CMD] ${command.trimEnd()}")
+        }
     }
 
     fun close() {

@@ -17,6 +17,7 @@ import com.andrerinas.openheadunit.connection.wifi.direct.WifiBandCapability
 import com.andrerinas.openheadunit.decoder.video.VideoDecoder
 import com.andrerinas.openheadunit.utils.AppLog
 import com.andrerinas.openheadunit.utils.HeadUnitScreenConfig
+import com.andrerinas.openheadunit.utils.TopwayCarState
 import com.andrerinas.openheadunit.utils.VideoFallbackPolicy
 import com.andrerinas.openheadunit.aap.AudioSessionConfig
 import com.google.protobuf.Message
@@ -43,6 +44,17 @@ internal class ServiceDiscoveryResponse(context: Context, audioConfig: AudioSess
                     // Always announce Night sensor, as we control it via NightModeManager
                     sources.addSensors(makeSensorType(Sensors.SensorType.NIGHT))
                     AppLog.i("[ServiceDiscovery] Announcing NIGHT sensor support. Strategy: ${settings.nightMode}")
+
+                    if (settings.sendVehicleTelemetry && TopwayCarState.isSupported) {
+                        sources.addSensors(makeSensorType(Sensors.SensorType.CAR_SPEED))
+                        sources.addSensors(makeSensorType(Sensors.SensorType.RPM))
+                        sources.addSensors(makeSensorType(Sensors.SensorType.PARKING_BRAKE))
+                        sources.addSensors(makeSensorType(Sensors.SensorType.GEAR))
+                        sources.addSensors(makeSensorType(Sensors.SensorType.FUEL_LEVEL))
+                        AppLog.i("[ServiceDiscovery] Announcing CANbus vehicle telemetry sensors (CAR_SPEED, RPM, PARKING_BRAKE, GEAR, FUEL_LEVEL)")
+                    } else if (settings.fakeSpeed) {
+                        sources.addSensors(makeSensorType(Sensors.SensorType.CAR_SPEED))
+                    }
 
                 }.build()
             }.build()

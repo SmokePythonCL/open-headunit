@@ -1335,4 +1335,24 @@
     <string name="copy_to_clipboard">Copy</string>
     <string name="copied_to_clipboard">Copied to clipboard</string>
     <string name="audio_settings_reconnect">Audio settings saved. Reconnect Android Auto to apply them.</string>
+    <string name="send_vehicle_telemetry">Vehicle Telemetry to Android Auto (CANbus)</string>
+    <string name="send_vehicle_telemetry_description">Send real vehicle speed (VSS), RPM, parking brake, gear, and fuel range from CANbus to Android Auto for tunnel dead-reckoning and dashboard status</string>
+    <string name="show_vehicle_osd">Doors &amp; Climate Control OSD over Android Auto</string>
+    <string name="show_vehicle_osd_description">Always display a floating overlay over Android Auto when doors open or climate control / glass heater settings change</string>
+    <string name="osd_door_fl">Front Left Door</string>
+    <string name="osd_door_fr">Front Right Door</string>
+    <string name="osd_door_rl">Rear Left Door</string>
+    <string name="osd_door_rr">Rear Right Door</string>
+    <string name="osd_door_trunk">Trunk</string>
+    <string name="osd_door_hood">Hood</string>
+    <string name="osd_doors_open_title">Door Open</string>
+    <string name="osd_climate_title">Climate Control</string>
+    <string name="osd_climate_off">HVAC Off</string>
+    <string name="osd_front_defrost">Front Defrost</string>
+    <string name="osd_rear_defrost">Rear Heater</string>
+    <string name="osd_recirc_inner">Recirculation</string>
+    <string name="osd_recirc_outer">Fresh Air</string>
+    <string name="osd_fan_speed">Fan %1$d/7</string>
+    <string name="osd_ext_temp">Ext %1$d°C</string>
 </resources>
+
