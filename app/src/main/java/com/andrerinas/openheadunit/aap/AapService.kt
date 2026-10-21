@@ -668,8 +668,10 @@ class AapService : Service() {
 
         override fun onAccChanged(accOn: Boolean) {
             if (accOn) {
-                AppLog.i("AapService: Topway ACC_ON detected -> triggering fast wake & CANbus state query")
-                TopwayCarState.queryCurrentState()
+                AppLog.i("AapService: Topway ACC_ON detected -> triggering fast wake")
+                if (App.provide(this@AapService).settings.enableVehicleFeatures) {
+                    TopwayCarState.queryCurrentState()
+                }
                 onTopwayFastWake("Topway ACC_ON")
             }
         }
@@ -681,6 +683,7 @@ class AapService : Service() {
     ) {
         if (!TopwayCarState.isSupported) return
         val appSettings = App.provide(this).settings
+        if (!appSettings.enableVehicleFeatures) return
 
         val speedKmh = telemetry.speedKmh
         if (speedKmh != null && appSettings.galaSpeedVolume > 0) {
@@ -831,7 +834,9 @@ class AapService : Service() {
                     AccPowerState.noteOn()
                     replaySleepHold("SCREEN_ON")
                     if (TopwayCarState.isSupported) {
-                        TopwayCarState.queryCurrentState()
+                        if (App.provide(this@AapService).settings.enableVehicleFeatures) {
+                            TopwayCarState.queryCurrentState()
+                        }
                         onTopwayFastWake("Topway SCREEN_ON after ${offSec}s")
                     } else if (offDuration > HIBERNATE_WAKE_THRESHOLD_MS) {
                         AccPowerState.noteWake()

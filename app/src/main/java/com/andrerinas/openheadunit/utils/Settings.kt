@@ -2581,6 +2581,11 @@ class Settings(private val context: Context) {
         }
         set(value) = prefs.edit().putBoolean("external-bt-blink-transport-v2", value).apply()
 
+    // Master switch for vehicle custom features (door/climate OSD, CANbus telemetry, DFM car settings, GALA)
+    var enableVehicleFeatures: Boolean
+        get() = prefs.getBoolean("enable-vehicle-features", false)
+        set(value) = prefs.edit().putBoolean("enable-vehicle-features", value).apply()
+
     // Send real vehicle CANbus telemetry (speed, RPM, parking brake, gear, fuel range) to Android Auto
     var sendVehicleTelemetry: Boolean
         get() = prefs.getBoolean("send-vehicle-telemetry", true)

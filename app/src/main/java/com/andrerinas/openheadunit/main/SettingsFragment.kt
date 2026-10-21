@@ -146,7 +146,7 @@ class SettingsFragment : Fragment() {
         // Dark mode
         "darkModeSettings",
         // Automation
-        "autoStartSettings", "autoConnectSettings", "enableCarLauncher", "showVehicleOsd",
+        "autoStartSettings", "autoConnectSettings", "enableCarLauncher", "enableVehicleFeatures", "showVehicleOsd",
         // Navigation
         "gpsNavigation", "sendVehicleTelemetry",
         // Graphic
@@ -198,6 +198,7 @@ class SettingsFragment : Fragment() {
     private var pendingScreenOrientation: Settings.ScreenOrientation? = null
     private var pendingAppLanguage: String? = null
     private var pendingFakeSpeed: Boolean? = null
+    private var pendingEnableVehicleFeatures: Boolean? = null
     private var pendingSendVehicleTelemetry: Boolean? = null
     private var pendingShowVehicleOsd: Boolean? = null
     private var pendingGalaSpeedVolume: Int? = null
@@ -408,6 +409,7 @@ class SettingsFragment : Fragment() {
         pendingRaiseProjectionDuringCall = settings.raiseProjectionDuringCall
         pendingAutoEnableHotspot = settings.autoEnableHotspot
         pendingFakeSpeed = settings.fakeSpeed
+        pendingEnableVehicleFeatures = settings.enableVehicleFeatures
         pendingSendVehicleTelemetry = settings.sendVehicleTelemetry
         pendingShowVehicleOsd = settings.showVehicleOsd
         pendingGalaSpeedVolume = settings.galaSpeedVolume
@@ -577,6 +579,7 @@ class SettingsFragment : Fragment() {
         pendingRaiseProjectionDuringCall = settings.raiseProjectionDuringCall
         pendingAutoEnableHotspot = settings.autoEnableHotspot
         pendingFakeSpeed = settings.fakeSpeed
+        pendingEnableVehicleFeatures = settings.enableVehicleFeatures
         pendingSendVehicleTelemetry = settings.sendVehicleTelemetry
         pendingShowVehicleOsd = settings.showVehicleOsd
         pendingGalaSpeedVolume = settings.galaSpeedVolume
@@ -840,6 +843,7 @@ class SettingsFragment : Fragment() {
         pendingRaiseProjectionDuringCall?.let { if (it != settings.raiseProjectionDuringCall) settings.raiseProjectionDuringCall = it }
         pendingAutoEnableHotspot?.let { if (it != settings.autoEnableHotspot) settings.autoEnableHotspot = it }
         pendingFakeSpeed?.let { if (it != settings.fakeSpeed) settings.fakeSpeed = it }
+        pendingEnableVehicleFeatures?.let { if (it != settings.enableVehicleFeatures) settings.enableVehicleFeatures = it }
         pendingSendVehicleTelemetry?.let { if (it != settings.sendVehicleTelemetry) settings.sendVehicleTelemetry = it }
         pendingShowVehicleOsd?.let { if (it != settings.showVehicleOsd) settings.showVehicleOsd = it }
         pendingGalaSpeedVolume?.let { if (it != settings.galaSpeedVolume) settings.galaSpeedVolume = it }
@@ -1045,6 +1049,7 @@ class SettingsFragment : Fragment() {
                         pendingRaiseProjectionDuringCall != settings.raiseProjectionDuringCall ||
                         pendingAutoEnableHotspot != settings.autoEnableHotspot ||
                         pendingFakeSpeed != settings.fakeSpeed ||
+                        pendingEnableVehicleFeatures != settings.enableVehicleFeatures ||
                         pendingSendVehicleTelemetry != settings.sendVehicleTelemetry ||
                         pendingShowVehicleOsd != settings.showVehicleOsd ||
                         pendingGalaSpeedVolume != settings.galaSpeedVolume ||
@@ -2168,20 +2173,35 @@ class SettingsFragment : Fragment() {
         }
 
         items.add(SettingItem.ToggleSettingEntry(
-            stableId = "showVehicleOsd",
-            nameResId = R.string.show_vehicle_osd,
-            descriptionResId = R.string.show_vehicle_osd_description,
-            isChecked = pendingShowVehicleOsd ?: settings.showVehicleOsd,
-            searchKeywords = "osd puertas climatizador aire acondicionado calefactor vidrios doors climate hvac overlay canbus topway",
+            stableId = "enableVehicleFeatures",
+            nameResId = R.string.enable_vehicle_features,
+            descriptionResId = R.string.enable_vehicle_features_description,
+            isChecked = pendingEnableVehicleFeatures ?: settings.enableVehicleFeatures,
+            searchKeywords = "vehiculo custom integracion aire puertas telemetria canbus topway dongfeng dfm osd",
             onCheckedChanged = { isChecked ->
-                pendingShowVehicleOsd = isChecked
+                pendingEnableVehicleFeatures = isChecked
                 checkChanges()
                 updateSettingsList()
             }
         ))
 
-        if (TopwayCarState.isSupported) {
-            items.add(SettingItem.CategoryHeader("dfmSettings", R.string.dfm_settings_title))
+        val vehicleFeaturesActive = pendingEnableVehicleFeatures ?: settings.enableVehicleFeatures
+        if (vehicleFeaturesActive) {
+            items.add(SettingItem.ToggleSettingEntry(
+                stableId = "showVehicleOsd",
+                nameResId = R.string.show_vehicle_osd,
+                descriptionResId = R.string.show_vehicle_osd_description,
+                isChecked = pendingShowVehicleOsd ?: settings.showVehicleOsd,
+                searchKeywords = "osd puertas climatizador aire acondicionado calefactor vidrios doors climate hvac overlay canbus topway",
+                onCheckedChanged = { isChecked ->
+                    pendingShowVehicleOsd = isChecked
+                    checkChanges()
+                    updateSettingsList()
+                }
+            ))
+
+            if (TopwayCarState.isSupported) {
+                items.add(SettingItem.CategoryHeader("dfmSettings", R.string.dfm_settings_title))
 
             items.add(SettingItem.ToggleSettingEntry(
                 stableId = "dfmSpeedLock",
@@ -2354,6 +2374,7 @@ class SettingsFragment : Fragment() {
                 }
             ))
         }
+    }
 
         // --- Navigation Settings ---
                 items.add(SettingItem.SettingEntry(
@@ -2396,18 +2417,20 @@ class SettingsFragment : Fragment() {
             }
         ))
 
-        items.add(SettingItem.ToggleSettingEntry(
-            stableId = "sendVehicleTelemetry",
-            nameResId = R.string.send_vehicle_telemetry,
-            descriptionResId = R.string.send_vehicle_telemetry_description,
-            isChecked = pendingSendVehicleTelemetry ?: settings.sendVehicleTelemetry,
-            searchKeywords = "telemetria vehiculo canbus velocidad vss rpm freno mano parking brake gear combustible autonomia sensor",
-            onCheckedChanged = { isChecked ->
-                pendingSendVehicleTelemetry = isChecked
-                checkChanges()
-                updateSettingsList()
-            }
-        ))
+        if (pendingEnableVehicleFeatures ?: settings.enableVehicleFeatures) {
+            items.add(SettingItem.ToggleSettingEntry(
+                stableId = "sendVehicleTelemetry",
+                nameResId = R.string.send_vehicle_telemetry,
+                descriptionResId = R.string.send_vehicle_telemetry_description,
+                isChecked = pendingSendVehicleTelemetry ?: settings.sendVehicleTelemetry,
+                searchKeywords = "telemetria vehiculo canbus velocidad vss rpm freno mano parking brake gear combustible autonomia sensor",
+                onCheckedChanged = { isChecked ->
+                    pendingSendVehicleTelemetry = isChecked
+                    checkChanges()
+                    updateSettingsList()
+                }
+            ))
+        }
 
         items.add(SettingItem.ToggleSettingEntry(
             stableId = "fakeSpeed",
@@ -3019,30 +3042,32 @@ class SettingsFragment : Fragment() {
             }
         ))
 
-        val galaOptions = arrayOf(
-            getString(R.string.gala_off),
-            getString(R.string.gala_low),
-            getString(R.string.gala_medium),
-            getString(R.string.gala_high)
-        )
-        val currentGalaIdx = (pendingGalaSpeedVolume ?: settings.galaSpeedVolume).coerceIn(0, 3)
-        items.add(SettingItem.SettingEntry(
-            stableId = "galaSpeedVolume",
-            nameResId = R.string.gala_speed_volume,
-            value = galaOptions.getOrElse(currentGalaIdx) { galaOptions[0] },
-            searchKeywords = "gala volumen velocidad carretera highway noise audio adaptativo autopista speed volume",
-            onClick = {
-                MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
-                    .setTitle(R.string.gala_speed_volume)
-                    .setSingleChoiceItems(galaOptions, currentGalaIdx) { dialog, which ->
-                        pendingGalaSpeedVolume = which
-                        checkChanges()
-                        dialog.dismiss()
-                        updateSettingsList()
-                    }
-                    .show()
-            }
-        ))
+        if (pendingEnableVehicleFeatures ?: settings.enableVehicleFeatures) {
+            val galaOptions = arrayOf(
+                getString(R.string.gala_off),
+                getString(R.string.gala_low),
+                getString(R.string.gala_medium),
+                getString(R.string.gala_high)
+            )
+            val currentGalaIdx = (pendingGalaSpeedVolume ?: settings.galaSpeedVolume).coerceIn(0, 3)
+            items.add(SettingItem.SettingEntry(
+                stableId = "galaSpeedVolume",
+                nameResId = R.string.gala_speed_volume,
+                value = galaOptions.getOrElse(currentGalaIdx) { galaOptions[0] },
+                searchKeywords = "gala volumen velocidad carretera highway noise audio adaptativo autopista speed volume",
+                onClick = {
+                    MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                        .setTitle(R.string.gala_speed_volume)
+                        .setSingleChoiceItems(galaOptions, currentGalaIdx) { dialog, which ->
+                            pendingGalaSpeedVolume = which
+                            checkChanges()
+                            dialog.dismiss()
+                            updateSettingsList()
+                        }
+                        .show()
+                }
+            ))
+        }
 
         items.add(SettingItem.SettingEntry(
             stableId = "audioLatencyMultiplier",

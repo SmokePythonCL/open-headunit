@@ -1266,6 +1266,8 @@
     <string name="pref_set_default_launcher_title">Aplicación de inicio predeterminada</string>
     <string name="pref_default_launcher_status_active">Activo (Tocar para gestionar)</string>
     <string name="pref_default_launcher_status_inactive">No establecido (Tocar para configurar)</string>
+    <string name="enable_vehicle_features">Funciones y Detección del Vehículo</string>
+    <string name="enable_vehicle_features_description">Activa la detección de puertas, climatizador en pantalla (OSD), telemetría CANbus y ajustes del auto. Desactívalo si tu vehículo o radio no reporta estos datos para máxima fluidez.</string>
     <string name="send_vehicle_telemetry">Telemetría del vehículo hacia Android Auto (CANbus)</string>
     <string name="send_vehicle_telemetry_description">Envía velocidad real (VSS), RPM, freno de mano, marcha y autonomía desde el CANbus hacia Android Auto para posicionamiento en túneles y alertas del tablero</string>
     <string name="show_vehicle_osd">Barra flotante de Puertas y Climatizador sobre Android Auto</string>

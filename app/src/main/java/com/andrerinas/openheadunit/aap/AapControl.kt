@@ -304,7 +304,7 @@ internal class AapControlSensor(
             }
         }
 
-        if (settings.sendVehicleTelemetry && TopwayCarState.isSupported) {
+        if (settings.enableVehicleFeatures && settings.sendVehicleTelemetry && TopwayCarState.isSupported) {
             val telemetry = TopwayCarState.telemetryState
             when (request.type) {
                 Sensors.SensorType.CAR_SPEED -> {

@@ -1033,7 +1033,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         if (settings.showPerformanceOverlay) {
             attachPerformanceOverlay()
         }
-        if (TopwayCarState.isSupported && settings.showVehicleOsd) {
+        if (TopwayCarState.isSupported && settings.enableVehicleFeatures && settings.showVehicleOsd) {
             findViewById<FrameLayout>(R.id.container)?.let { vehicleOsdOverlay.attachTo(it) }
         }
 
@@ -1285,7 +1285,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         userLeftDeliberately = false
         closeCallRaiseEpisode("the projection is back in front")
         AppLog.i("AapProjectionActivity: onResume")
-        if (TopwayCarState.isSupported && settings.showVehicleOsd) {
+        if (TopwayCarState.isSupported && settings.enableVehicleFeatures && settings.showVehicleOsd) {
             if (!vehicleOsdOverlay.isAttached) {
                 findViewById<FrameLayout>(R.id.container)?.let { vehicleOsdOverlay.attachTo(it) }
             }

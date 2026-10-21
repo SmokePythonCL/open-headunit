@@ -45,7 +45,7 @@ internal class ServiceDiscoveryResponse(context: Context, audioConfig: AudioSess
                     sources.addSensors(makeSensorType(Sensors.SensorType.NIGHT))
                     AppLog.i("[ServiceDiscovery] Announcing NIGHT sensor support. Strategy: ${settings.nightMode}")
 
-                    if (settings.sendVehicleTelemetry && TopwayCarState.isSupported) {
+                    if (settings.enableVehicleFeatures && settings.sendVehicleTelemetry && TopwayCarState.isSupported) {
                         sources.addSensors(makeSensorType(Sensors.SensorType.CAR_SPEED))
                         sources.addSensors(makeSensorType(Sensors.SensorType.RPM))
                         sources.addSensors(makeSensorType(Sensors.SensorType.PARKING_BRAKE))

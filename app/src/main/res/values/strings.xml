@@ -1335,6 +1335,8 @@
     <string name="copy_to_clipboard">Copy</string>
     <string name="copied_to_clipboard">Copied to clipboard</string>
     <string name="audio_settings_reconnect">Audio settings saved. Reconnect Android Auto to apply them.</string>
+    <string name="enable_vehicle_features">Vehicle Custom Features &amp; Detection</string>
+    <string name="enable_vehicle_features_description">Enable door status, climate control OSD overlay, CANbus vehicle telemetry, and car settings. Disable this if your vehicle or radio does not report CANbus data to maximize performance.</string>
     <string name="send_vehicle_telemetry">Vehicle Telemetry to Android Auto (CANbus)</string>
     <string name="send_vehicle_telemetry_description">Send real vehicle speed (VSS), RPM, parking brake, gear, and fuel range from CANbus to Android Auto for tunnel dead-reckoning and dashboard status</string>
     <string name="show_vehicle_osd">Doors &amp; Climate Control OSD over Android Auto</string>

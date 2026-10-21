@@ -65,11 +65,14 @@ class TopwayVehicleOsdOverlay(
         renderPill()
     }
 
+    private val isOsdActive: Boolean
+        get() = settings.enableVehicleFeatures && settings.showVehicleOsd
+
     private val carStateListener = object : TopwayCarState.Listener {
         override fun onDoorsChanged(doors: TopwayCarState.DoorState) {
             handler.post {
                 if (released || !started) return@post
-                if (!settings.showVehicleOsd) {
+                if (!isOsdActive) {
                     hideAll()
                     return@post
                 }
@@ -96,7 +99,7 @@ class TopwayVehicleOsdOverlay(
         override fun onClimateChanged(climate: TopwayCarState.ClimateState) {
             handler.post {
                 if (released || !started) return@post
-                if (!settings.showVehicleOsd) {
+                if (!isOsdActive) {
                     hideAll()
                     return@post
                 }
@@ -114,7 +117,7 @@ class TopwayVehicleOsdOverlay(
 
         override fun onTelemetryChanged(telemetry: TopwayCarState.VehicleTelemetryState) {
             handler.post {
-                if (released || !started || !settings.showVehicleOsd) return@post
+                if (released || !started || !isOsdActive) return@post
                 val isSpanish = isSpanishLocale()
                 val speed = telemetry.speedKmh ?: 0f
 
@@ -259,15 +262,15 @@ class TopwayVehicleOsdOverlay(
     }
 
     fun start(context: Context) {
-        if (released || !TopwayCarState.isSupported) return
+        if (released || !TopwayCarState.isSupported || !settings.enableVehicleFeatures) return
         if (started) {
-            if (!settings.showVehicleOsd) hideAll()
+            if (!isOsdActive) hideAll()
             return
         }
         started = true
         val currentDoors = TopwayCarState.doorState
         lastDoorAnyOpen = currentDoors.anyOpen
-        if (currentDoors.anyOpen && settings.showVehicleOsd) {
+        if (currentDoors.anyOpen && isOsdActive) {
             activeDoorLine = formatDoorLine(
                 doors = currentDoors,
                 outsideTempC = TopwayCarState.telemetryState.exteriorTempC,
@@ -313,7 +316,7 @@ class TopwayVehicleOsdOverlay(
 
     private fun renderPill() {
         val view = textView ?: return
-        if (!settings.showVehicleOsd) {
+        if (!isOsdActive) {
             view.visibility = View.GONE
             return
         }
