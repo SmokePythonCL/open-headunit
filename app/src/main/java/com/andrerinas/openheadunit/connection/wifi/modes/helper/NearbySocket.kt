@@ -28,6 +28,7 @@ class NearbySocket : Socket() {
     private val inputLatch = CountDownLatch(1)
     private val outputLatch = CountDownLatch(1)
     @Volatile private var retired = false
+    @Volatile private var closingUnderlying = false
 
     private companion object {
         /**
@@ -73,7 +74,7 @@ class NearbySocket : Socket() {
         }
 
     override fun isConnected() = !retired
-    override fun isClosed() = retired
+    override fun isClosed(): Boolean = if (closingUnderlying) super.isClosed() else (retired || super.isClosed())
 
     override fun getInetAddress(): InetAddress = InetAddress.getLoopbackAddress()
 
@@ -105,7 +106,9 @@ class NearbySocket : Socket() {
         // then release the monitor so late attachments can be rejected independently.
         // Socket options can initialize the inherited SocketImpl even for a Nearby tunnel.
         // Let Socket.close set its own closed state before potentially blocking payload cleanup.
+        closingUnderlying = true
         try { super.close() } finally {
+            closingUnderlying = false
             closeStream(streams.first, "inbound")
             closeStream(streams.second, "outbound")
         }
